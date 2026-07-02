@@ -1,0 +1,18 @@
+# Credentials & secrets — never commit these
+.env
+auth/
+.streamlit/secrets.toml
+
+# Generated data — too large and refreshed automatically
+downloads/
+output/
+logs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
