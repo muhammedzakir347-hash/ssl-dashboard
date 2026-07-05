@@ -252,13 +252,20 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     """
     df = df.copy()
 
-    # Filter to Kuwait only (Country__c = 'kw') when the column is present.
-    # fetch_inventory() already filters via SOQL, but raw CSVs from disk may not.
+    # Filter to Kuwait only when Country column is present.
     if "Country" in df.columns:
-        # Country__c is a lookup — filter by the Kuwait record ID or the 'kw' text code.
-        kw_id = "ta3A8a000000aSE1EAM"
         df = df[df["Country"].str.lower() == "kwt"]
-        logger.info("process_inventory_aging: filtered to KW → %s rows", len(df))
+        logger.info("process_inventory_aging: filtered to KWT → %s rows", len(df))
+
+    # Keep items starting with "KW", excluding "KWP", "KDD", and any gift items.
+    upper = df["Item No."].str.upper().fillna("")
+    df = df[
+        upper.str.startswith("KW") &
+        ~upper.str.startswith("KWP") &
+        ~upper.str.startswith("KDD") &
+        ~upper.str.contains("GIFT")
+    ]
+    logger.info("process_inventory_aging: after item filter → %s rows", len(df))
 
     for col in ("Item No.", "Category", "Brand", "Vendor"):
         df[col] = df[col].fillna("UNKNOWN").astype(str).str.strip().replace({"": "UNKNOWN", "nan": "UNKNOWN"})

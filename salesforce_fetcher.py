@@ -226,7 +226,18 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     df = _flatten_inv(records)
     before = len(df)
     df = df[df["Country"].str.lower() == "kwt"]
-    logger.info("Inventory: %s KWT rows (dropped %s)", len(df), before - len(df))
+    logger.info("Inventory: %s KWT rows (dropped %s non-KWT)", len(df), before - len(df))
+
+    # Keep items starting with "KW", excluding "KWP", "KDD", and any gift items.
+    upper = df["Item No."].str.upper().fillna("")
+    before = len(df)
+    df = df[
+        upper.str.startswith("KW") &
+        ~upper.str.startswith("KWP") &
+        ~upper.str.startswith("KDD") &
+        ~upper.str.contains("GIFT")
+    ]
+    logger.info("Inventory: %s rows after item filter (dropped %s)", len(df), before - len(df))
     return df
 
 
