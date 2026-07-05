@@ -238,6 +238,12 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
         ~upper.str.contains("GIFT")
     ]
     logger.info("Inventory: %s rows after item filter (dropped %s)", len(df), before - len(df))
+
+    # Exclude specific vendors.
+    EXCLUDED_VENDORS = {"EPIC FOOD SUPPLIES CO"}
+    before = len(df)
+    df = df[~df["Vendor"].str.upper().isin({v.upper() for v in EXCLUDED_VENDORS})]
+    logger.info("Inventory: %s rows after vendor exclusion (dropped %s)", len(df), before - len(df))
     return df
 
 

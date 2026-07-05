@@ -265,6 +265,10 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
         ~upper.str.startswith("KDD") &
         ~upper.str.contains("GIFT")
     ]
+
+    # Exclude specific vendors.
+    EXCLUDED_VENDORS = {"EPIC FOOD SUPPLIES CO"}
+    df = df[~df["Vendor"].str.upper().isin({v.upper() for v in EXCLUDED_VENDORS})]
     logger.info("process_inventory_aging: after item filter → %s rows", len(df))
 
     for col in ("Item No.", "Category", "Brand", "Vendor"):
