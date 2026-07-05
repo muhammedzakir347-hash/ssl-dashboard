@@ -183,6 +183,7 @@ _INV_SOQL_FIELDS = (
     "GFERP__Item__r.Category__c, "
     "GFERP__Item__r.Drops_Brand__r.Name, "
     "GFERP__Item__r.GFERP__Vendor__r.Name, "
+    "GFERP__Item__r.Country__c, "
     "GFERP__Posting_Date__c, "
     "GFERP__Unit_Cost__c, "
     "GFERP__Remaining_Qty_Base__c, "
@@ -201,6 +202,7 @@ def _flatten_inv(records: list[dict]) -> pd.DataFrame:
             "Category":      item.get("Category__c"),
             "Brand":         brand_rel.get("Name"),
             "Vendor":        vendor_rel.get("Name"),
+            "Country":       item.get("Country__c"),
             "Posting Date":  r.get("GFERP__Posting_Date__c"),
             "Unit Cost":     r.get("GFERP__Unit_Cost__c"),
             "Remaining Qty": r.get("GFERP__Remaining_Qty_Base__c"),
@@ -210,11 +212,11 @@ def _flatten_inv(records: list[dict]) -> pd.DataFrame:
 
 
 def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
-    """Fetch inventory aging data from GFERP__Item_Ledger_Entry__c."""
+    """Fetch Kuwait inventory aging data from GFERP__Item_Ledger_Entry__c."""
     if sf is None:
         sf = get_sf_connection()
-    # Keep the WHERE simple (no cross-object LIKE) to avoid query timeouts.
-    # Country and bin filtering is done in Python after fetch.
+    # WHERE uses only a direct numeric field to avoid cross-object timeout.
+    # Country filter (KWT) is applied in Python after fetch.
     soql = (
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
@@ -222,7 +224,12 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)
-    logger.info("Inventory DataFrame: %s rows x %s cols", len(df), len(df.columns))
+    before = len(df)
+    df = df[df["Country"].str.upper().str.contains("KWT", na=False)]
+    logger.info(
+        "Inventory filtered to KWT: %s rows (dropped %s non-KWT rows)",
+        len(df), before - len(df),
+    )
     return df
 
 
