@@ -386,24 +386,9 @@ display_cols = ["Item No.", "Vendor", "Brand", "Category",
                 "Posting Date", "Days", "Aging Bucket",
                 "Remaining Qty", "Unit Cost", "Remaining Value"]
 
-def color_aging_row(row):
-    color = BUCKET_COLORS.get(str(row["Aging Bucket"]), "")
-    return [f"background-color:{color}22; color:#FAF6EF" if color else "" for _ in row]
-
-styled_drill = (
-    drill_df[display_cols]
-    .sort_values(["Days"], ascending=False)
-    .style
-    .apply(color_aging_row, axis=1)
-    .format({
-        "Remaining Qty":   "{:,.0f}",
-        "Unit Cost":       "{:,.3f}",
-        "Remaining Value": "{:,.2f}",
-        "Days":            "{:,.0f}",
-        "Posting Date":    lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "—",
-    })
-)
-st.dataframe(styled_drill, use_container_width=True, height=400)
+drill_display = drill_df[display_cols].sort_values(["Days"], ascending=False).copy()
+drill_display["Posting Date"] = drill_display["Posting Date"].dt.strftime("%Y-%m-%d")
+st.dataframe(drill_display, use_container_width=True, height=400)
 
 # ─────────────────────────────────────────────────────────
 # FOOTER

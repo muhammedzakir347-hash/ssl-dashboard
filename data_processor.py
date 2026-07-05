@@ -255,7 +255,9 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     # Filter to Kuwait only (Country__c = 'kw') when the column is present.
     # fetch_inventory() already filters via SOQL, but raw CSVs from disk may not.
     if "Country" in df.columns:
-        df = df[df["Country"].str.lower() == "kw"]
+        # Country__c is a lookup — filter by the Kuwait record ID or the 'kw' text code.
+        kw_id = "ta3A8a000000aSE1EAM"
+        df = df[df["Country"].isin([kw_id, "kw", "KW", "Kuwait", "KUWAIT"])]
         logger.info("process_inventory_aging: filtered to KW → %s rows", len(df))
 
     for col in ("Item No.", "Category", "Brand", "Vendor"):

@@ -221,7 +221,7 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
         f"WHERE GFERP__Remaining_Qty_Base__c > 0 "
-        f"AND GFERP__Item__r.Country__c = 'kw'"
+        f"AND GFERP__Item__r.Country__c = 'ta3A8a000000aSE1EAM'"
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)
