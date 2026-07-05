@@ -18,21 +18,12 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-try:
-    from dotenv import load_dotenv
-    load_dotenv(Path(__file__).parent.parent / ".env")
-except ImportError:
-    pass
-for _key in ("SF_USERNAME", "SF_PASSWORD", "SF_SECURITY_TOKEN"):
-    if _key in st.secrets and not os.getenv(_key):
-        os.environ[_key] = st.secrets[_key]
-
 import config
 import data_processor
 import salesforce_fetcher
 
 # ─────────────────────────────────────────────────────────
-# PAGE CONFIG
+# PAGE CONFIG  (must be first Streamlit command)
 # ─────────────────────────────────────────────────────────
 st.set_page_config(
     page_title="Inventory Aging | Drops",
@@ -40,6 +31,18 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent.parent / ".env")
+except ImportError:
+    pass
+for _key in ("SF_USERNAME", "SF_PASSWORD", "SF_SECURITY_TOKEN"):
+    try:
+        if _key in st.secrets and not os.getenv(_key):
+            os.environ[_key] = st.secrets[_key]
+    except Exception:
+        pass
 
 # ─────────────────────────────────────────────────────────
 # THEME / CSS  (same visual system as main dashboard)
