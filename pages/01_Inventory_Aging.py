@@ -177,7 +177,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    if st.button("🔄 Reload Data", width="stretch"):
+    if st.button("🔄 Reload Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -252,7 +252,7 @@ with c1:
         xaxis_title="Aging Bucket (days)", yaxis_title="Value (KD)",
         bargap=0.3,
     )
-    st.plotly_chart(fig1, width="stretch")
+    st.plotly_chart(fig1, use_container_width=True)
 
 # Chart 2 — Top 15 vendors by aged value (120+ days)
 with c2:
@@ -281,7 +281,7 @@ with c2:
             xaxis_title="Remaining Value (KD)", yaxis_title="",
         )
         fig2.update_traces(textposition="outside", textfont_color="#FAF6EF")
-        st.plotly_chart(fig2, width="stretch")
+        st.plotly_chart(fig2, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────
 # CHARTS ROW 2
@@ -316,7 +316,7 @@ with c3:
         xaxis_title="", yaxis_title="Value (KD)",
         xaxis_tickangle=-35,
     )
-    st.plotly_chart(fig3, width="stretch")
+    st.plotly_chart(fig3, use_container_width=True)
 
 # Chart 4 — Aging distribution pie
 with c4:
@@ -340,7 +340,7 @@ with c4:
         font_color="#FAF6EF", showlegend=False,
         margin=dict(l=20, r=20, t=20, b=10), height=360,
     )
-    st.plotly_chart(fig4, width="stretch")
+    st.plotly_chart(fig4, use_container_width=True)
 
 # ─────────────────────────────────────────────────────────
 # SUMMARY TABLE — Vendor × Bucket
@@ -367,7 +367,7 @@ def color_bucket_cell(val):
 fmt = {c: "{:,.0f}" for c in vendor_summary.columns if c != "Vendor"}
 st.dataframe(
     vendor_summary.style.format(fmt).map(color_bucket_cell, subset=[c for c in vendor_summary.columns if c not in ("Vendor", "Total Value")]),
-    width="stretch", height=380,
+    use_container_width=True, height=380,
 )
 
 # ─────────────────────────────────────────────────────────
@@ -403,7 +403,7 @@ styled_drill = (
         "Posting Date":    lambda x: x.strftime("%Y-%m-%d") if pd.notna(x) else "—",
     })
 )
-st.dataframe(styled_drill, width="stretch", height=400)
+st.dataframe(styled_drill, use_container_width=True, height=400)
 
 # ─────────────────────────────────────────────────────────
 # FOOTER

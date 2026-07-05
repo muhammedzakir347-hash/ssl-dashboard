@@ -208,7 +208,7 @@ with st.sidebar:
     # SSL threshold highlight
     ssl_threshold = st.slider("⚠️ Flag SSL below (%)", 0, 100, 80)
 
-    if st.button("🔄 Reload Data", width="stretch"):
+    if st.button("🔄 Reload Data", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
 
@@ -332,7 +332,7 @@ styled = (
         "SSL % (Qty)":         lambda x: f"{x:.1f}%" if pd.notna(x) else "—",
     })
 )
-st.dataframe(styled, width="stretch", height=400)
+st.dataframe(styled, use_container_width=True, height=400)
 
 # ──────────────────────────────────────────────────────────────────────
 # CHARTS ROW
@@ -366,7 +366,7 @@ with c1:
         yaxis_title="", xaxis_title="SSL %",
     )
     fig1.update_traces(textposition="outside")
-    st.plotly_chart(fig1, width="stretch")
+    st.plotly_chart(fig1, use_container_width=True)
 
 # Chart 2 — Monthly SSL trend (line)
 with c2:
@@ -398,7 +398,7 @@ with c2:
         yaxis=dict(title="SSL %", range=[0,110]),
         xaxis_title="",
     )
-    st.plotly_chart(fig2, width="stretch")
+    st.plotly_chart(fig2, use_container_width=True)
 
 # ──────────────────────────────────────────────────────────────────────
 # SECOND CHARTS ROW
@@ -431,7 +431,7 @@ with c3:
         yaxis_title="", xaxis_title="SSL %",
     )
     fig3.update_traces(textposition="outside")
-    st.plotly_chart(fig3, width="stretch")
+    st.plotly_chart(fig3, use_container_width=True)
 
 # Chart 4 — PO Value vs Received Value by Category (grouped bar)
 with c4:
@@ -454,7 +454,7 @@ with c4:
         margin=dict(l=0,r=20,t=30,b=10), height=400,
         yaxis_title="Value (KD)", xaxis_title="",
     )
-    st.plotly_chart(fig4, width="stretch")
+    st.plotly_chart(fig4, use_container_width=True)
 
 # ──────────────────────────────────────────────────────────────────────
 # DRILL-DOWN — Raw item level
@@ -474,7 +474,7 @@ drill_summary = (
 drill_summary["SSL_VALUE"] = (drill_summary["Rec_Value"] / drill_summary["PO_Value"] * 100).round(1).where(drill_summary["PO_Value"] > 0)
 st.dataframe(
     drill_summary.sort_values("SSL_VALUE", ascending=True),
-    width="stretch", height=350
+    use_container_width=True, height=350
 )
 
 # ──────────────────────────────────────────────────────────────────────
