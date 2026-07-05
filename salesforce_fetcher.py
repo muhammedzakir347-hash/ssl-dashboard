@@ -220,12 +220,13 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     soql = (
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
-        f"WHERE GFERP__Remaining_Qty_Base__c > 0 "
-        f"AND GFERP__Item__r.Country__c = 'ta3A8a000000aSE1EAM'"
+        f"WHERE GFERP__Remaining_Qty_Base__c > 0"
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)
-    logger.info("Inventory (KW) DataFrame: %s rows x %s cols", len(df), len(df.columns))
+    before = len(df)
+    df = df[df["Country"].str.lower() == "kwt"]
+    logger.info("Inventory: %s KWT rows (dropped %s)", len(df), before - len(df))
     return df
 
 

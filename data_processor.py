@@ -257,7 +257,7 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     if "Country" in df.columns:
         # Country__c is a lookup — filter by the Kuwait record ID or the 'kw' text code.
         kw_id = "ta3A8a000000aSE1EAM"
-        df = df[df["Country"].isin([kw_id, "kw", "KW", "Kuwait", "KUWAIT"])]
+        df = df[df["Country"].str.lower() == "kwt"]
         logger.info("process_inventory_aging: filtered to KW → %s rows", len(df))
 
     for col in ("Item No.", "Category", "Brand", "Vendor"):
