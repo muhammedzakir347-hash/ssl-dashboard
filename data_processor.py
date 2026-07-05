@@ -239,6 +239,44 @@ def overall_summary(merged: pd.DataFrame) -> pd.DataFrame:
 
 
 # ----------------------------------------------------------------------
+# INVENTORY AGING
+# ----------------------------------------------------------------------
+AGING_BINS   = [-1, 30, 60, 90, 120, float("inf")]
+AGING_LABELS = ["0-30", "30-60", "60-90", "90-120", "120+"]
+
+
+def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Takes the raw inventory DataFrame from salesforce_fetcher.fetch_inventory()
+    and returns a clean aging table with Days and Aging_Bucket columns.
+    """
+    df = df.copy()
+
+    for col in ("Item No.", "Category", "Brand", "Vendor"):
+        df[col] = df[col].fillna("UNKNOWN").astype(str).str.strip().replace({"": "UNKNOWN", "nan": "UNKNOWN"})
+
+    df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
+    df = df[df["Posting Date"].notna()]
+
+    df["Remaining Qty"]  = pd.to_numeric(df["Remaining Qty"],  errors="coerce").fillna(0.0)
+    df["Unit Cost"]      = pd.to_numeric(df["Unit Cost"],      errors="coerce").fillna(0.0)
+    df["Total Cost"]     = pd.to_numeric(df["Total Cost"],     errors="coerce").fillna(0.0)
+
+    today = pd.Timestamp.today().normalize()
+    df["Days"] = (today - df["Posting Date"]).dt.days.clip(lower=0)
+
+    df["Aging Bucket"] = pd.cut(df["Days"], bins=AGING_BINS, labels=AGING_LABELS, right=True)
+
+    # Remaining value = unit cost × remaining qty (more accurate than Total Cost for aging)
+    df["Remaining Value"] = (df["Unit Cost"] * df["Remaining Qty"]).round(2)
+
+    cols = ["Item No.", "Category", "Brand", "Vendor",
+            "Posting Date", "Days", "Aging Bucket",
+            "Remaining Qty", "Unit Cost", "Remaining Value"]
+    return df[cols].sort_values(["Aging Bucket", "Vendor", "Item No."]).reset_index(drop=True)
+
+
+# ----------------------------------------------------------------------
 # PIPELINE ENTRY POINT
 # ----------------------------------------------------------------------
 def _build_sheets(po_raw: pd.DataFrame, wh_raw: pd.DataFrame) -> dict[str, pd.DataFrame]:

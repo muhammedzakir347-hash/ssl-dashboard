@@ -86,12 +86,30 @@ def main() -> int:
     try:
         po_path, wh_path = get_input_files(args)
         sheets = data_processor.run_pipeline(po_path, wh_path)
+
+        # Fetch and add inventory aging sheet
+        if config.SF_USERNAME and config.SF_INV_REPORT_ID:
+            logger.info("Fetching inventory aging data...")
+            import salesforce_fetcher
+            sf = salesforce_fetcher.get_sf_connection()
+            inv_raw = salesforce_fetcher.fetch_inventory(sf)
+            inv_path = config.DOWNLOADS_DIR / "inventory_latest.csv"
+            inv_raw.to_csv(inv_path, index=False, encoding="utf-8")
+            logger.info("Inventory saved -> %s (%s rows)", inv_path, len(inv_raw))
+            sheets["Inventory_Aging"] = data_processor.process_inventory_aging(inv_raw)
+
         saved_paths = excel_builder.save_with_history(sheets)
 
         # Save pre-processed data for the dashboard to load instantly (no re-processing).
         merged_cache = config.DOWNLOADS_DIR / "raw_merged.csv"
         sheets["Raw_Merged_Data"].to_csv(merged_cache, index=False, encoding="utf-8")
         logger.info("Dashboard cache saved -> %s", merged_cache)
+
+        # Save inventory aging cache for the dashboard page
+        if "Inventory_Aging" in sheets:
+            inv_cache = config.DOWNLOADS_DIR / "inventory_aging.csv"
+            sheets["Inventory_Aging"].to_csv(inv_cache, index=False, encoding="utf-8")
+            logger.info("Inventory aging cache saved -> %s", inv_cache)
 
         elapsed = (datetime.now() - start).total_seconds()
         logger.info("=== Run completed successfully in %.1fs ===", elapsed)

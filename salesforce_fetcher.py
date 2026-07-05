@@ -178,6 +178,54 @@ def _fetch_wh(sf: Salesforce) -> pd.DataFrame:
     return df
 
 
+_INV_SOQL_FIELDS = (
+    "GFERP__Item__r.Name, "
+    "GFERP__Item__r.Category__c, "
+    "GFERP__Item__r.Drops_Brand__r.Name, "
+    "GFERP__Item__r.GFERP__Vendor__r.Name, "
+    "GFERP__Posting_Date__c, "
+    "GFERP__Unit_Cost__c, "
+    "GFERP__Remaining_Qty_Base__c, "
+    "GFERP__Total_Cost__c"
+)
+
+
+def _flatten_inv(records: list[dict]) -> pd.DataFrame:
+    rows = []
+    for r in records:
+        item       = r.get("GFERP__Item__r") or {}
+        brand_rel  = item.get("Drops_Brand__r") or {}
+        vendor_rel = item.get("GFERP__Vendor__r") or {}
+        rows.append({
+            "Item No.":      item.get("Name"),
+            "Category":      item.get("Category__c"),
+            "Brand":         brand_rel.get("Name"),
+            "Vendor":        vendor_rel.get("Name"),
+            "Posting Date":  r.get("GFERP__Posting_Date__c"),
+            "Unit Cost":     r.get("GFERP__Unit_Cost__c"),
+            "Remaining Qty": r.get("GFERP__Remaining_Qty_Base__c"),
+            "Total Cost":    r.get("GFERP__Total_Cost__c"),
+        })
+    return pd.DataFrame(rows)
+
+
+def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
+    """Fetch inventory aging data from GFERP__Item_Ledger_Entry__c."""
+    if sf is None:
+        sf = get_sf_connection()
+    # Keep the WHERE simple (no cross-object LIKE) to avoid query timeouts.
+    # Country and bin filtering is done in Python after fetch.
+    soql = (
+        f"SELECT {_INV_SOQL_FIELDS} "
+        f"FROM GFERP__Item_Ledger_Entry__c "
+        f"WHERE GFERP__Remaining_Qty_Base__c > 0"
+    )
+    records = _run_soql(sf, soql, "Inventory")
+    df = _flatten_inv(records)
+    logger.info("Inventory DataFrame: %s rows x %s cols", len(df), len(df.columns))
+    return df
+
+
 # -------------------------------------------------------------------------
 # PUBLIC ENTRY POINTS
 # -------------------------------------------------------------------------

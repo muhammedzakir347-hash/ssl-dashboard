@@ -43,8 +43,9 @@ SF_API_VERSION    = "59.0"
 
 # Report IDs — copy from the URL when you open the report in Salesforce
 # e.g. https://yourorg.salesforce.com/00O5g000005ABCDEA4
-SF_PO_REPORT_ID   = "00OPW00001JLTzd2AH"          # Purchase Order report ID  (00O...)
-SF_WH_REPORT_ID   = "00OPW00001Lq6sn2AB"          # Warehouse Receipt report ID (00O...)
+SF_PO_REPORT_ID   = "00OPW00001JLTzd2AH"
+SF_WH_REPORT_ID   = "00OPW00001Lq6sn2AB"
+SF_INV_REPORT_ID  = "00OPW00001AvQdt2AF"          # Inventory Aging report ID
 
 SF_FETCH_MONTHS   = 6           # how many calendar months back to pull
 
