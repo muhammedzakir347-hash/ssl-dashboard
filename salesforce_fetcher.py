@@ -215,21 +215,17 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     """Fetch Kuwait inventory aging data from GFERP__Item_Ledger_Entry__c."""
     if sf is None:
         sf = get_sf_connection()
-    # WHERE uses only a direct numeric field to avoid cross-object timeout.
-    # Country filter (KWT) is applied in Python after fetch.
+    # Filter by Country__c = 'kw' in SOQL (equality is index-friendly; LIKE caused timeouts).
+    # Python post-filter kept as a safety net for any case-variation.
     soql = (
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
-        f"WHERE GFERP__Remaining_Qty_Base__c > 0"
+        f"WHERE GFERP__Remaining_Qty_Base__c > 0 "
+        f"AND GFERP__Item__r.Country__c = 'kw'"
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)
-    before = len(df)
-    df = df[df["Country"].str.upper().str.contains("KWT", na=False)]
-    logger.info(
-        "Inventory filtered to KWT: %s rows (dropped %s non-KWT rows)",
-        len(df), before - len(df),
-    )
+    logger.info("Inventory (KW) DataFrame: %s rows x %s cols", len(df), len(df.columns))
     return df
 
 
