@@ -158,9 +158,7 @@ def load_inventory():
         return df, None
     except Exception as e:
         import traceback
-        return None, f"{e}
-
-{traceback.format_exc()}"
+        return None, f"{e}\n\n{traceback.format_exc()}"
 
 df_full, load_error = load_inventory()
 
