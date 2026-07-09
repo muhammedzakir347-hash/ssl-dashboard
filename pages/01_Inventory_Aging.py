@@ -180,9 +180,6 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    if st.button("🔄 Reload Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
 
 # ─────────────────────────────────────────────────────────
 # APPLY FILTERS

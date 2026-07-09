@@ -208,9 +208,6 @@ with st.sidebar:
     # SSL threshold highlight
     ssl_threshold = st.slider("⚠️ Flag SSL below (%)", 0, 100, 80)
 
-    if st.button("🔄 Reload Data", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
 
 # ──────────────────────────────────────────────────────────────────────
 # APPLY FILTERS
