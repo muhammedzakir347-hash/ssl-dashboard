@@ -100,16 +100,27 @@ def main() -> int:
 
         saved_paths = excel_builder.save_with_history(sheets)
 
-        # Save pre-processed data for the dashboard to load instantly (no re-processing).
+        # Save local CSV cache (fast fallback when BigQuery is unavailable)
         merged_cache = config.DOWNLOADS_DIR / "raw_merged.csv"
         sheets["Raw_Merged_Data"].to_csv(merged_cache, index=False, encoding="utf-8")
-        logger.info("Dashboard cache saved -> %s", merged_cache)
+        logger.info("Local cache saved -> %s", merged_cache)
 
-        # Save inventory aging cache for the dashboard page
         if "Inventory_Aging" in sheets:
             inv_cache = config.DOWNLOADS_DIR / "inventory_aging.csv"
             sheets["Inventory_Aging"].to_csv(inv_cache, index=False, encoding="utf-8")
-            logger.info("Inventory aging cache saved -> %s", inv_cache)
+            logger.info("Local inventory cache saved -> %s", inv_cache)
+
+        # Push to BigQuery — dashboard reads from here (fast, no SF fetch needed)
+        try:
+            import bigquery_client
+            logger.info("Pushing SSL data to BigQuery...")
+            bigquery_client.push_dataframe(sheets["Raw_Merged_Data"], bigquery_client.TABLE_SSL)
+            if "Inventory_Aging" in sheets:
+                logger.info("Pushing inventory aging to BigQuery...")
+                bigquery_client.push_dataframe(sheets["Inventory_Aging"], bigquery_client.TABLE_INV)
+            logger.info("BigQuery push complete.")
+        except Exception:
+            logger.warning("BigQuery push failed (dashboard will use local CSV):\n%s", traceback.format_exc())
 
         elapsed = (datetime.now() - start).total_seconds()
         logger.info("=== Run completed successfully in %.1fs ===", elapsed)

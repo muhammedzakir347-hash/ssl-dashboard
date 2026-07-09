@@ -117,13 +117,34 @@ def load_inventory():
     raw_path   = config.DOWNLOADS_DIR / "inventory_latest.csv"
 
     try:
+        import bigquery_client
+
+        # 1. BigQuery — fastest, persistent on Cloud
+        try:
+            if bigquery_client.table_exists(bigquery_client.TABLE_INV):
+                df = bigquery_client.read_table(
+                    bigquery_client.TABLE_INV,
+                    restore_columns=bigquery_client.INV_RESTORE,
+                )
+                df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
+                for col in ("Remaining Qty", "Unit Cost", "Remaining Value", "Days"):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                df["Aging Bucket"] = pd.Categorical(
+                    df["Aging Bucket"], categories=list(BUCKET_COLORS), ordered=True
+                )
+                return df, None
+        except Exception:
+            pass  # fall through to CSV / SF
+
+        # 2. Local CSV cache
         if cache_path.exists():
             df = pd.read_csv(cache_path, low_memory=False)
             df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
             for col in ("Remaining Qty", "Unit Cost", "Remaining Value", "Days"):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-            df["Aging Bucket"] = pd.Categorical(df["Aging Bucket"],
-                                                categories=list(BUCKET_COLORS), ordered=True)
+            df["Aging Bucket"] = pd.Categorical(
+                df["Aging Bucket"], categories=list(BUCKET_COLORS), ordered=True
+            )
         elif raw_path.exists():
             raw = pd.read_csv(raw_path, low_memory=False)
             df = data_processor.process_inventory_aging(raw)
@@ -137,8 +158,9 @@ def load_inventory():
         return df, None
     except Exception as e:
         import traceback
-        return None, f"{e}\n\n{traceback.format_exc()}"
+        return None, f"{e}
 
+{traceback.format_exc()}"
 
 df_full, load_error = load_inventory()
 

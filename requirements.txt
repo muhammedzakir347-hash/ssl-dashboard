@@ -10,3 +10,7 @@ google-api-python-client>=2.90
 simple-salesforce>=1.12.5
 python-dateutil>=2.8
 python-dotenv>=1.0
+google-cloud-bigquery>=3.0
+google-cloud-bigquery-storage>=2.0
+db-dtypes>=1.0
+pyarrow>=14.0

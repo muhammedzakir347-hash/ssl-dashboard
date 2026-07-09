@@ -126,35 +126,46 @@ def load_data():
     wh_path    = config.DOWNLOADS_DIR / "warehouse_latest.csv"
 
     try:
+        import bigquery_client
+
+        # 1. BigQuery — fastest, works on Cloud and local
+        try:
+            if bigquery_client.table_exists(bigquery_client.TABLE_SSL):
+                df = bigquery_client.read_table(bigquery_client.TABLE_SSL)
+                for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
+                return df, None
+        except Exception:
+            pass  # fall through to CSV / SF
+
+        # 2. Local CSV cache (written by scheduled task)
         if cache_path.exists():
-            # Fast path: read pre-processed CSV written by the scheduled task.
             df = pd.read_csv(cache_path, dtype=str, low_memory=False)
             for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
         elif po_path.exists() and wh_path.exists():
-            # Medium path: raw CSVs exist, re-run pipeline.
             sheets = data_processor.run_pipeline(po_path, wh_path)
             df = sheets["Raw_Merged_Data"].copy()
 
         elif config.SF_USERNAME and config.SF_PASSWORD:
-            # Cloud path: no local files — fetch directly from Salesforce.
-            # First load takes ~4 minutes; then cached for 4 hours.
             import salesforce_fetcher
-            with st.spinner("Connecting to Salesforce and fetching data (first load ~4 min)…"):
+            with st.spinner("Fetching data from Salesforce (first load ~4 min)…"):
                 frames = salesforce_fetcher.fetch_dataframes()
             sheets = data_processor.run_pipeline_from_dfs(frames["po"], frames["warehouse"])
             df = sheets["Raw_Merged_Data"].copy()
 
         else:
-            return None, "No data found and no Salesforce credentials configured."
+            return None, "No data found. Run main.py to populate the database."
 
         df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
         return df, None
     except Exception as e:
         import traceback
-        return None, f"{e}\n\n{traceback.format_exc()}"
+        return None, f"{e}
 
+{traceback.format_exc()}"
 
 df_full, load_error = load_data()
 
