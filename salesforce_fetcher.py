@@ -18,14 +18,20 @@ How it works:
 from __future__ import annotations
 
 import logging
+import time
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 from dateutil.relativedelta import relativedelta
 from simple_salesforce import Salesforce
+from simple_salesforce.exceptions import SalesforceAuthenticationFailed
 
 import config
+
+# Retry config for transient SOQL failures (network blip, temp timeout).
+# Auth failures are never retried — retrying wrong credentials is what freezes accounts.
+_SOQL_RETRY_WAITS = [30, 90]  # seconds between attempts 1→2 and 2→3
 
 logger = logging.getLogger("ssl_dashboard.salesforce")
 
@@ -42,12 +48,19 @@ def get_sf_connection() -> Salesforce:
         )
     domain_label = config.SF_DOMAIN or "production"
     logger.info("Connecting to Salesforce as %s (%s)", config.SF_USERNAME, domain_label)
-    sf = Salesforce(
-        username=config.SF_USERNAME,
-        password=config.SF_PASSWORD,
-        security_token=config.SF_SECURITY_TOKEN,
-        domain=config.SF_DOMAIN,
-    )
+    try:
+        sf = Salesforce(
+            username=config.SF_USERNAME,
+            password=config.SF_PASSWORD,
+            security_token=config.SF_SECURITY_TOKEN,
+            domain=config.SF_DOMAIN,
+        )
+    except SalesforceAuthenticationFailed as exc:
+        logger.error(
+            "Salesforce authentication FAILED — wrong password or security token. "
+            "NOT retrying (repeated attempts freeze the account). Error: %s", exc,
+        )
+        raise
     logger.info("Connected. Instance: %s", sf.sf_instance)
     return sf
 
@@ -141,11 +154,26 @@ def _date_range() -> tuple[str, str]:
 
 
 def _run_soql(sf: Salesforce, soql: str, label: str) -> list[dict]:
-    logger.info("%s: executing SOQL (query_all) ...", label)
-    result  = sf.query_all(soql)
-    records = result.get("records", [])
-    logger.info("%s: %s total rows fetched", label, len(records))
-    return records
+    last_exc: Exception | None = None
+    for attempt, wait in enumerate(["first"] + _SOQL_RETRY_WAITS, start=1):
+        if attempt > 1:
+            logger.warning("%s: transient error — retrying in %ss (attempt %d)…", label, wait, attempt)
+            time.sleep(wait)
+        try:
+            logger.info("%s: SOQL attempt %d …", label, attempt)
+            result  = sf.query_all(soql)
+            records = result.get("records", [])
+            logger.info("%s: %s rows fetched", label, len(records))
+            return records
+        except SalesforceAuthenticationFailed as exc:
+            # Wrong credentials — retrying will only pile up failed logins and freeze the account.
+            logger.error("%s: auth failed — NOT retrying: %s", label, exc)
+            raise
+        except Exception as exc:
+            last_exc = exc
+            logger.warning("%s: attempt %d failed: %s", label, attempt, exc)
+    logger.error("%s: all attempts exhausted. Last error: %s", label, last_exc)
+    raise last_exc  # type: ignore[misc]
 
 
 def _fetch_po(sf: Salesforce) -> pd.DataFrame:
