@@ -111,7 +111,7 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
 # ─────────────────────────────────────────────────────────
 # DATA LOADING
 # ─────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Loading inventory data…", ttl=14400)
+@st.cache_data(show_spinner="Loading inventory data…", ttl=43200)
 def load_inventory():
     cache_path = config.DOWNLOADS_DIR / "inventory_aging.csv"
     raw_path   = config.DOWNLOADS_DIR / "inventory_latest.csv"

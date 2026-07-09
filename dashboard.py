@@ -119,7 +119,7 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
 # ──────────────────────────────────────────────────────────────────────
 # DATA LOADING
 # ──────────────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Loading data…", ttl=14400)  # cache 4 hours
+@st.cache_data(show_spinner="Loading data…", ttl=43200)  # cache 12 hours
 def load_data():
     cache_path = config.DOWNLOADS_DIR / "raw_merged.csv"
     po_path    = config.DOWNLOADS_DIR / "po_latest.csv"
