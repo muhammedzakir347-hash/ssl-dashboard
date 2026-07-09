@@ -17,6 +17,7 @@ How it works:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import date
@@ -29,11 +30,63 @@ from simple_salesforce.exceptions import SalesforceAuthenticationFailed
 
 import config
 
+logger = logging.getLogger("ssl_dashboard.salesforce")
+
 # Retry config for transient SOQL failures (network blip, temp timeout).
-# Auth failures are never retried — retrying wrong credentials is what freezes accounts.
+# Auth failures are NEVER retried — repeated wrong-credential attempts freeze the account.
 _SOQL_RETRY_WAITS = [30, 90]  # seconds between attempts 1→2 and 2→3
 
-logger = logging.getLogger("ssl_dashboard.salesforce")
+# -------------------------------------------------------------------------
+# AUTH BACKOFF
+# After one auth failure we write a timestamp file and refuse any further
+# Salesforce connections for _AUTH_BACKOFF_SECS seconds.  This stops a
+# broken scheduler or repeated page loads from piling up failed logins.
+# -------------------------------------------------------------------------
+_AUTH_BACKOFF_FILE = config.LOGS_DIR / ".sf_auth_backoff"
+_AUTH_BACKOFF_SECS = 7200   # 2 hours
+
+
+def _in_auth_backoff() -> bool:
+    """Return True (and log a warning) if we're still inside the backoff window."""
+    if not _AUTH_BACKOFF_FILE.exists():
+        return False
+    try:
+        data = json.loads(_AUTH_BACKOFF_FILE.read_text(encoding="utf-8"))
+        elapsed = time.time() - data.get("failed_at", 0)
+        if elapsed < _AUTH_BACKOFF_SECS:
+            remaining = int(_AUTH_BACKOFF_SECS - elapsed)
+            logger.warning(
+                "Salesforce auth is in backoff after a recent failure. "
+                "Skipping connection for another %d min to protect the account. "
+                "Fix credentials then delete %s to unblock immediately.",
+                remaining // 60, _AUTH_BACKOFF_FILE,
+            )
+            return True
+        _AUTH_BACKOFF_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
+    return False
+
+
+def _set_auth_backoff() -> None:
+    try:
+        _AUTH_BACKOFF_FILE.write_text(
+            json.dumps({"failed_at": time.time()}), encoding="utf-8"
+        )
+        logger.error(
+            "Auth backoff set for %d min. No Salesforce connections will be attempted "
+            "until then. Fix credentials and delete %s to unblock early.",
+            _AUTH_BACKOFF_SECS // 60, _AUTH_BACKOFF_FILE,
+        )
+    except Exception as exc:
+        logger.warning("Could not write auth backoff file: %s", exc)
+
+
+def _clear_auth_backoff() -> None:
+    try:
+        _AUTH_BACKOFF_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 # -------------------------------------------------------------------------
@@ -46,6 +99,11 @@ def get_sf_connection() -> Salesforce:
             f"Salesforce credentials not set in config.py: {missing}. "
             "See salesforce_fetcher.py docstring for setup instructions."
         )
+    if _in_auth_backoff():
+        raise RuntimeError(
+            f"Salesforce auth is blocked for up to {_AUTH_BACKOFF_SECS // 60} min "
+            f"after a recent failure. Delete {_AUTH_BACKOFF_FILE} to unblock early."
+        )
     domain_label = config.SF_DOMAIN or "production"
     logger.info("Connecting to Salesforce as %s (%s)", config.SF_USERNAME, domain_label)
     try:
@@ -56,11 +114,13 @@ def get_sf_connection() -> Salesforce:
             domain=config.SF_DOMAIN,
         )
     except SalesforceAuthenticationFailed as exc:
+        _set_auth_backoff()
         logger.error(
             "Salesforce authentication FAILED — wrong password or security token. "
-            "NOT retrying (repeated attempts freeze the account). Error: %s", exc,
+            "NOT retrying. Error: %s", exc,
         )
         raise
+    _clear_auth_backoff()
     logger.info("Connected. Instance: %s", sf.sf_instance)
     return sf
 
