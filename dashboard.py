@@ -252,6 +252,20 @@ if active_filters:
         unsafe_allow_html=True,
     )
 
+# Global search — filters by Vendor, Brand, or Item No.
+item_search = st.text_input(
+    "🔎 Search Vendor / Brand / Item No.",
+    placeholder="Type to search e.g. KW005004 or vendor name",
+    label_visibility="collapsed",
+)
+if item_search:
+    q = item_search.strip().upper()
+    df = df[
+        df["Vendor"].str.upper().str.contains(q, na=False) |
+        df["Brand"].str.upper().str.contains(q, na=False) |
+        df["Item_No"].str.upper().str.contains(q, na=False)
+    ]
+
 # ──────────────────────────────────────────────────────────────────────
 # SUMMARY TABLE (matches your screenshot layout exactly)
 # Vendor | Category | Brand | date range | PO Value | Received Value | SSL
@@ -344,6 +358,15 @@ st.dataframe(styled, use_container_width=True, height=400)
 # CHARTS ROW
 # ──────────────────────────────────────────────────────────────────────
 st.markdown("---")
+
+_CHART_CFG = {
+    "scrollZoom": False,
+    "modeBarButtonsToRemove": [
+        "zoom2d", "pan2d", "select2d", "lasso2d",
+        "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d",
+    ],
+}
+
 c1, c2 = st.columns(2)
 
 # Chart 1 — SSL by Vendor (bar)
@@ -369,14 +392,14 @@ with c1:
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
         font_color="#FAF6EF", coloraxis_showscale=False,
         margin=dict(l=0,r=20,t=10,b=10), height=350,
-        yaxis_title="", xaxis_title="SSL %",
+        yaxis_title="", xaxis_title="SSL %", dragmode=False,
     )
-    fig1.update_traces(textposition="outside")
-    st.plotly_chart(fig1, use_container_width=True)
+    fig1.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
+    st.plotly_chart(fig1, use_container_width=True, config=_CHART_CFG)
 
-# Chart 2 — Monthly SSL trend (line)
+# Chart 2 — Monthly SSL trend + PO vs Received bars
 with c2:
-    st.markdown('<div class="section-title">Monthly SSL Trend (Value)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-title">Monthly SSL Trend — Value & SSL %</div>', unsafe_allow_html=True)
     monthly = (
         df.groupby("Month", dropna=False)
         .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
@@ -385,26 +408,57 @@ with c2:
     )
     monthly["SSL"] = np.where(monthly["PO_Value"] > 0, (monthly["Rec_Value"] / monthly["PO_Value"] * 100).round(1), np.nan)
     fig2 = go.Figure()
+    # PO Value bars (left axis)
+    fig2.add_trace(go.Bar(
+        x=monthly["Month"], y=monthly["PO_Value"],
+        name="PO Value",
+        marker_color="#1a3a2a", marker_line_color="#4a7a5a", marker_line_width=1,
+        text=monthly["PO_Value"].apply(lambda x: f"{x:,.0f}"),
+        textposition="inside", insidetextanchor="middle",
+        textfont=dict(color="#aaaaaa", size=9),
+        yaxis="y1",
+        hovertemplate="<b>%{x}</b><br>PO Value: KD %{y:,.0f}<extra></extra>",
+    ))
+    # Received Value bars (left axis)
+    fig2.add_trace(go.Bar(
+        x=monthly["Month"], y=monthly["Rec_Value"],
+        name="Received",
+        marker_color="#C9A84C", opacity=0.85,
+        text=monthly["Rec_Value"].apply(lambda x: f"{x:,.0f}"),
+        textposition="inside", insidetextanchor="middle",
+        textfont=dict(color="#0f1f17", size=9),
+        yaxis="y1",
+        hovertemplate="<b>%{x}</b><br>Received: KD %{y:,.0f}<extra></extra>",
+    ))
+    # SSL % line (right axis)
     fig2.add_trace(go.Scatter(
         x=monthly["Month"], y=monthly["SSL"],
         mode="lines+markers+text",
-        line=dict(color="#C9A84C", width=3),
-        marker=dict(size=8, color="#C9A84C"),
-        text=monthly["SSL"].apply(lambda x: f"{x:.1f}%"),
+        line=dict(color="#FAF6EF", width=2),
+        marker=dict(size=7, color="#FAF6EF"),
+        text=monthly["SSL"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else ""),
         textposition="top center",
-        textfont=dict(color="#FAF6EF"),
+        textfont=dict(color="#FAF6EF", size=10),
         name="SSL %",
+        yaxis="y2",
+        hovertemplate="<b>%{x}</b><br>SSL: %{y:.1f}%<extra></extra>",
     ))
     fig2.add_hline(y=ssl_threshold, line_dash="dash", line_color="#F8696B",
-                   annotation_text=f"Target {ssl_threshold}%", annotation_font_color="#F8696B")
+                   annotation_text=f"Target {ssl_threshold}%",
+                   annotation_font_color="#F8696B", yref="y2")
     fig2.update_layout(
+        barmode="overlay",
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
-        font_color="#FAF6EF", showlegend=False,
-        margin=dict(l=0,r=20,t=10,b=10), height=350,
-        yaxis=dict(title="SSL %", range=[0,110]),
+        font_color="#FAF6EF",
+        legend=dict(orientation="h", y=1.05, font=dict(size=11)),
+        margin=dict(l=0, r=50, t=30, b=10), height=350,
         xaxis_title="",
+        yaxis=dict(title="Value (KD)", side="left", showgrid=False),
+        yaxis2=dict(title="SSL %", side="right", overlaying="y",
+                    range=[0, 115], showgrid=False, ticksuffix="%"),
+        dragmode=False,
     )
-    st.plotly_chart(fig2, use_container_width=True)
+    st.plotly_chart(fig2, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # SECOND CHARTS ROW
@@ -420,7 +474,7 @@ with c3:
         .reset_index()
     )
     brand_ssl["SSL"] = np.where(brand_ssl["PO_Value"] > 0, (brand_ssl["Rec_Value"] / brand_ssl["PO_Value"] * 100).round(1), np.nan)
-    brand_ssl = brand_ssl.sort_values("SSL").head(20)  # top 20 worst
+    brand_ssl = brand_ssl.sort_values("SSL").head(20)
     fig3 = px.bar(
         brand_ssl, x="SSL", y="Brand", orientation="h",
         color="SSL",
@@ -434,10 +488,10 @@ with c3:
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
         font_color="#FAF6EF", coloraxis_showscale=False,
         margin=dict(l=0,r=20,t=10,b=10), height=400,
-        yaxis_title="", xaxis_title="SSL %",
+        yaxis_title="", xaxis_title="SSL %", dragmode=False,
     )
-    fig3.update_traces(textposition="outside")
-    st.plotly_chart(fig3, use_container_width=True)
+    fig3.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
+    st.plotly_chart(fig3, use_container_width=True, config=_CHART_CFG)
 
 # Chart 4 — PO Value vs Received Value by Category (grouped bar)
 with c4:
@@ -450,17 +504,23 @@ with c4:
     )
     fig4 = go.Figure()
     fig4.add_trace(go.Bar(name="PO Value", x=cat_data["Category"], y=cat_data["PO_Value"],
-                          marker_color="#1a3a2a", marker_line_color="#C9A84C", marker_line_width=1))
+                          marker_color="#1a3a2a", marker_line_color="#C9A84C", marker_line_width=1,
+                          text=cat_data["PO_Value"].apply(lambda x: f"{x:,.0f}"),
+                          textposition="inside", insidetextanchor="middle",
+                          textfont=dict(color="#FAF6EF")))
     fig4.add_trace(go.Bar(name="Received", x=cat_data["Category"], y=cat_data["Rec_Value"],
-                          marker_color="#C9A84C"))
+                          marker_color="#C9A84C",
+                          text=cat_data["Rec_Value"].apply(lambda x: f"{x:,.0f}"),
+                          textposition="inside", insidetextanchor="middle",
+                          textfont=dict(color="#0f1f17")))
     fig4.update_layout(
         barmode="group",
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
         font_color="#FAF6EF", legend=dict(orientation="h", y=1.05),
         margin=dict(l=0,r=20,t=30,b=10), height=400,
-        yaxis_title="Value (KD)", xaxis_title="",
+        yaxis_title="Value (KD)", xaxis_title="", dragmode=False,
     )
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # DRILL-DOWN — Raw item level

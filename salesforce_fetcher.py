@@ -272,9 +272,13 @@ _INV_SOQL_FIELDS = (
     "GFERP__Item__r.Drops_Brand__r.Name, "
     "GFERP__Item__r.GFERP__Vendor__r.Name, "
     "GFERP__Item__r.Country__c, "
+    "GFERP__Bin__r.Name, "
+    "GFERP__Warehouse__r.Name, "
     "GFERP__Posting_Date__c, "
     "GFERP__Unit_Cost__c, "
     "GFERP__Remaining_Qty_Base__c, "
+    "GFERP__Allocated_Qty_Base__c, "
+    "GFERP__Available_Qty_Base__c, "
     "GFERP__Total_Cost__c"
 )
 
@@ -285,16 +289,22 @@ def _flatten_inv(records: list[dict]) -> pd.DataFrame:
         item       = r.get("GFERP__Item__r") or {}
         brand_rel  = item.get("Drops_Brand__r") or {}
         vendor_rel = item.get("GFERP__Vendor__r") or {}
+        bin_rel    = r.get("GFERP__Bin__r") or {}
+        wh_rel     = r.get("GFERP__Warehouse__r") or {}
         rows.append({
-            "Item No.":      item.get("Name"),
-            "Category":      item.get("Category__c"),
-            "Brand":         brand_rel.get("Name"),
-            "Vendor":        vendor_rel.get("Name"),
-            "Country":       item.get("Country__c"),
-            "Posting Date":  r.get("GFERP__Posting_Date__c"),
-            "Unit Cost":     r.get("GFERP__Unit_Cost__c"),
-            "Remaining Qty": r.get("GFERP__Remaining_Qty_Base__c"),
-            "Total Cost":    r.get("GFERP__Total_Cost__c"),
+            "Item No.":       item.get("Name"),
+            "Category":       item.get("Category__c"),
+            "Brand":          brand_rel.get("Name"),
+            "Vendor":         vendor_rel.get("Name"),
+            "Country":        item.get("Country__c"),
+            "Warehouse":      wh_rel.get("Name"),
+            "Bin":            bin_rel.get("Name"),
+            "Posting Date":   r.get("GFERP__Posting_Date__c"),
+            "Unit Cost":      r.get("GFERP__Unit_Cost__c"),
+            "Remaining Qty":  r.get("GFERP__Remaining_Qty_Base__c"),
+            "Allocated Qty":  r.get("GFERP__Allocated_Qty_Base__c"),
+            "Available Qty":  r.get("GFERP__Available_Qty_Base__c"),
+            "Total Cost":     r.get("GFERP__Total_Cost__c"),
         })
     return pd.DataFrame(rows)
 
@@ -308,7 +318,7 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     soql = (
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
-        f"WHERE GFERP__Remaining_Qty_Base__c > 0"
+        f"WHERE GFERP__Available_Qty_Base__c > 0"
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)

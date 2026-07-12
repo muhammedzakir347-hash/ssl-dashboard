@@ -274,6 +274,12 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("Item No.", "Category", "Brand", "Vendor"):
         df[col] = df[col].fillna("UNKNOWN").astype(str).str.strip().replace({"": "UNKNOWN", "nan": "UNKNOWN"})
 
+    # Optional new columns — fill defaults if not present (e.g. old CSV/BQ data)
+    for col in ("Warehouse", "Bin"):
+        if col not in df.columns:
+            df[col] = ""
+        df[col] = df[col].fillna("").astype(str).str.strip()
+
     df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
     df = df[df["Posting Date"].notna()]
 
@@ -281,17 +287,26 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     df["Unit Cost"]      = pd.to_numeric(df["Unit Cost"],      errors="coerce").fillna(0.0)
     df["Total Cost"]     = pd.to_numeric(df["Total Cost"],     errors="coerce").fillna(0.0)
 
+    df["Allocated Qty"] = pd.to_numeric(df.get("Allocated Qty"), errors="coerce").fillna(0.0)
+    # Available Qty = Remaining Qty when not provided (old data)
+    if "Available Qty" in df.columns:
+        df["Available Qty"] = pd.to_numeric(df["Available Qty"], errors="coerce").fillna(df["Remaining Qty"])
+    else:
+        df["Available Qty"] = df["Remaining Qty"]
+
     today = pd.Timestamp.today().normalize()
     df["Days"] = (today - df["Posting Date"]).dt.days.clip(lower=0)
 
     df["Aging Bucket"] = pd.cut(df["Days"], bins=AGING_BINS, labels=AGING_LABELS, right=True)
 
-    # Remaining value = unit cost × remaining qty (more accurate than Total Cost for aging)
     df["Remaining Value"] = (df["Unit Cost"] * df["Remaining Qty"]).round(2)
+    df["Available Value"] = (df["Unit Cost"] * df["Available Qty"]).round(2)
 
     cols = ["Item No.", "Category", "Brand", "Vendor",
+            "Warehouse", "Bin",
             "Posting Date", "Days", "Aging Bucket",
-            "Remaining Qty", "Unit Cost", "Remaining Value"]
+            "Remaining Qty", "Allocated Qty", "Available Qty",
+            "Unit Cost", "Remaining Value", "Available Value"]
     return df[cols].sort_values(["Aging Bucket", "Vendor", "Item No."]).reset_index(drop=True)
 
 

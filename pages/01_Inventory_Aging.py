@@ -111,6 +111,24 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
 # ─────────────────────────────────────────────────────────
 # DATA LOADING
 # ─────────────────────────────────────────────────────────
+DAMAGED_BINS = {"damaged good", "damaged goods"}  # highlighted in KPI card
+EXCLUDE_BINS: set = set()                          # nothing excluded — Receive-Ard entries are valid stock
+
+def _coerce_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
+    for col in ("Remaining Qty", "Allocated Qty", "Available Qty",
+                "Unit Cost", "Remaining Value", "Available Value", "Days"):
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+    # Ensure optional cols exist
+    for col in ("Warehouse", "Bin", "Allocated Qty", "Available Qty", "Available Value"):
+        if col not in df.columns:
+            df[col] = np.nan if col.endswith("Qty") or col.endswith("Value") else ""
+    if df["Available Qty"].isna().all():
+        df["Available Qty"] = df["Remaining Qty"]
+    if df["Available Value"].isna().all():
+        df["Available Value"] = df["Remaining Value"]
+    return df
+
 @st.cache_data(show_spinner="Loading inventory data…", ttl=43200)
 def load_inventory():
     cache_path = config.DOWNLOADS_DIR / "inventory_aging.csv"
@@ -127,8 +145,7 @@ def load_inventory():
                     restore_columns=bigquery_client.INV_RESTORE,
                 )
                 df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
-                for col in ("Remaining Qty", "Unit Cost", "Remaining Value", "Days"):
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
+                df = _coerce_numeric_cols(df)
                 df["Aging Bucket"] = pd.Categorical(
                     df["Aging Bucket"], categories=list(BUCKET_COLORS), ordered=True
                 )
@@ -140,8 +157,7 @@ def load_inventory():
         if cache_path.exists():
             df = pd.read_csv(cache_path, low_memory=False)
             df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
-            for col in ("Remaining Qty", "Unit Cost", "Remaining Value", "Days"):
-                df[col] = pd.to_numeric(df[col], errors="coerce")
+            df = _coerce_numeric_cols(df)
             df["Aging Bucket"] = pd.Categorical(
                 df["Aging Bucket"], categories=list(BUCKET_COLORS), ordered=True
             )
@@ -176,20 +192,27 @@ if load_error:
     st.error(load_error)
     st.stop()
 
+# Exclude Receive-Ard entirely (not put-away stock)
+# Damaged Good/Goods stay in the main view — just another bin
+df_main_all = df_full[~df_full["Bin"].str.lower().isin(EXCLUDE_BINS)]
+
 # ─────────────────────────────────────────────────────────
 # SIDEBAR FILTERS
 # ─────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("## 🔍 Filters")
 
-    all_vendors = sorted(df_full["Vendor"].dropna().unique())
+    all_vendors = sorted(df_main_all["Vendor"].dropna().unique())
     sel_vendors = st.multiselect("Vendor", all_vendors, placeholder="All vendors")
 
-    all_brands = sorted(df_full["Brand"].dropna().unique())
+    all_brands = sorted(df_main_all["Brand"].dropna().unique())
     sel_brands = st.multiselect("Brand", all_brands, placeholder="All brands")
 
-    all_cats = sorted(df_full["Category"].dropna().unique())
+    all_cats = sorted(df_main_all["Category"].dropna().unique())
     sel_cats = st.multiselect("Category", all_cats, placeholder="All categories")
+
+    all_bins = sorted(b for b in df_main_all["Bin"].dropna().unique() if b)
+    sel_bins = st.multiselect("Bin", all_bins, placeholder="All bins")
 
     st.markdown("---")
     sel_buckets = st.multiselect(
@@ -204,11 +227,21 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────
 # APPLY FILTERS
 # ─────────────────────────────────────────────────────────
-df = df_full.copy()
+df = df_main_all.copy()
 if sel_vendors: df = df[df["Vendor"].isin(sel_vendors)]
 if sel_brands:  df = df[df["Brand"].isin(sel_brands)]
 if sel_cats:    df = df[df["Category"].isin(sel_cats)]
+if sel_bins:    df = df[df["Bin"].isin(sel_bins)]
 if sel_buckets: df = df[df["Aging Bucket"].isin(sel_buckets)]
+
+# Global Item No. search
+item_search = st.text_input(
+    "🔎 Search Item No.",
+    placeholder="Type item number e.g. KW005004",
+    label_visibility="collapsed",
+)
+if item_search:
+    df = df[df["Item No."].str.upper().str.contains(item_search.strip().upper(), na=False)]
 
 # Active filter bar
 active = []
@@ -218,6 +251,8 @@ if sel_brands:
     active.append("<strong>Brand:</strong> " + " ".join(f'<span class="filter-pill">{b}</span>' for b in sel_brands))
 if sel_cats:
     active.append("<strong>Category:</strong> " + " ".join(f'<span class="filter-pill">{c}</span>' for c in sel_cats))
+if sel_bins:
+    active.append("<strong>Bin:</strong> " + " ".join(f'<span class="filter-pill">{b}</span>' for b in sel_bins))
 if active:
     st.markdown(f'<div class="filter-bar">🔍 Filtered by &nbsp; {"&nbsp;&nbsp;|&nbsp;&nbsp;".join(active)}</div>',
                 unsafe_allow_html=True)
@@ -225,43 +260,61 @@ if active:
 # ─────────────────────────────────────────────────────────
 # KPI CARDS
 # ─────────────────────────────────────────────────────────
-total_items = df["Item No."].nunique()
-total_qty   = df["Remaining Qty"].sum()
-total_value = df["Remaining Value"].sum()
-aged_pct    = (df["Days"] > 90).sum() / max(len(df), 1) * 100
+total_items  = df["Item No."].nunique()
+total_avail  = df["Available Qty"].sum()
+total_value  = df["Available Value"].sum()
+aged_pct     = (df["Days"] > 90).sum() / max(len(df), 1) * 100
+damaged_val  = df[df["Bin"].str.lower().isin(DAMAGED_BINS)]["Available Value"].sum()
 
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Unique Items",        f"{total_items:,}")
-k2.metric("Total Remaining Qty", f"{total_qty:,.0f}")
-k3.metric("Remaining Value (KD)", f"{total_value:,.0f}")
-k4.metric("Aged > 90 days",      f"{aged_pct:.1f}%",
-          delta="lines" , delta_color="off")
+k1, k2, k3, k4, k5 = st.columns(5)
+k1.metric("Unique Items",          f"{total_items:,}")
+k2.metric("Available Qty (OMS)",   f"{total_avail:,.0f}")
+k3.metric("Available Value (KD)",  f"{total_value:,.0f}")
+k4.metric("Aged > 90 days",        f"{aged_pct:.1f}%", delta="lines", delta_color="off")
+k5.metric("Damaged Stock (KD)",    f"{damaged_val:,.0f}", delta="incl. in total", delta_color="off")
 
 st.markdown("---")
+
+# Shared Plotly config — keep toolbar, but disable drag-to-zoom and zoom buttons
+_CHART_CFG = {
+    "scrollZoom": False,
+    "modeBarButtonsToRemove": [
+        "zoom2d", "pan2d", "select2d", "lasso2d",
+        "zoomIn2d", "zoomOut2d", "autoScale2d", "resetScale2d",
+    ],
+}
+
+# Session state for chart-click bucket filter
+if "chart_bucket" not in st.session_state:
+    st.session_state.chart_bucket = None
 
 # ─────────────────────────────────────────────────────────
 # CHARTS ROW 1
 # ─────────────────────────────────────────────────────────
 c1, c2 = st.columns(2)
 
-# Chart 1 — Remaining Value by aging bucket (bar)
+# Chart 1 — Available Value by aging bucket (clickable)
 with c1:
-    st.markdown('<div class="section-title">Remaining Value by Aging Bucket (KD)</div>',
+    st.markdown('<div class="section-title">Available Value by Aging Bucket (KD) · click to filter ↓</div>',
                 unsafe_allow_html=True)
     bucket_agg = (
         df.groupby("Aging Bucket", observed=True)
-        .agg(Value=("Remaining Value", "sum"), Qty=("Remaining Qty", "sum"), Items=("Item No.", "nunique"))
+        .agg(Value=("Available Value", "sum"), Qty=("Available Qty", "sum"), Items=("Item No.", "nunique"))
         .reset_index()
     )
     fig1 = go.Figure()
     for _, row in bucket_agg.iterrows():
         bucket = str(row["Aging Bucket"])
+        is_selected = st.session_state.chart_bucket == bucket
         fig1.add_trace(go.Bar(
             x=[bucket], y=[row["Value"]],
             name=bucket,
             marker_color=BUCKET_COLORS.get(bucket, "#C9A84C"),
+            marker_opacity=1.0 if is_selected or st.session_state.chart_bucket is None else 0.4,
+            marker_line=dict(width=3 if is_selected else 0, color="#FAF6EF"),
             text=f"{row['Value']:,.0f}",
-            textposition="outside",
+            textposition="inside",
+            insidetextanchor="middle",
             textfont=dict(color="#FAF6EF", size=11),
             hovertemplate=f"<b>{bucket} days</b><br>Value: KD %{{y:,.0f}}<br>Qty: {row['Qty']:,.0f}<br>Items: {row['Items']:,}<extra></extra>",
         ))
@@ -269,10 +322,15 @@ with c1:
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
         font_color="#FAF6EF", showlegend=False,
         margin=dict(l=0, r=20, t=20, b=10), height=320,
-        xaxis_title="Aging Bucket (days)", yaxis_title="Value (KD)",
-        bargap=0.3,
+        xaxis_title="Aging Bucket (days)", yaxis_title="Available Value (KD)",
+        bargap=0.3, clickmode="event", dragmode=False,
     )
-    st.plotly_chart(fig1, use_container_width=True)
+    ev1 = st.plotly_chart(fig1, use_container_width=True, on_select="rerun", config=_CHART_CFG)
+    if ev1 and ev1.selection and ev1.selection.points:
+        clicked = str(ev1.selection.points[0].get("x", ""))
+        if clicked:
+            st.session_state.chart_bucket = None if st.session_state.chart_bucket == clicked else clicked
+            st.rerun()
 
 # Chart 2 — Top 15 vendors by aged value (120+ days)
 with c2:
@@ -281,7 +339,7 @@ with c2:
     overdue = df[df["Aging Bucket"] == "120+"]
     vendor_overdue = (
         overdue.groupby("Vendor")
-        .agg(Value=("Remaining Value", "sum"))
+        .agg(Value=("Available Value", "sum"))
         .reset_index()
         .sort_values("Value", ascending=True)
         .tail(15)
@@ -298,10 +356,11 @@ with c2:
             plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
             font_color="#FAF6EF", showlegend=False,
             margin=dict(l=0, r=20, t=10, b=10), height=320,
-            xaxis_title="Remaining Value (KD)", yaxis_title="",
+            xaxis_title="Available Value (KD)", yaxis_title="",
+            dragmode=False,
         )
-        fig2.update_traces(textposition="outside", textfont_color="#FAF6EF")
-        st.plotly_chart(fig2, use_container_width=True)
+        fig2.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
+        st.plotly_chart(fig2, use_container_width=True, config=_CHART_CFG)
 
 # ─────────────────────────────────────────────────────────
 # CHARTS ROW 2
@@ -310,11 +369,11 @@ c3, c4 = st.columns(2)
 
 # Chart 3 — Stacked bar by Category + Bucket
 with c3:
-    st.markdown('<div class="section-title">Remaining Value by Category & Aging Bucket</div>',
+    st.markdown('<div class="section-title">Available Value by Category & Aging Bucket</div>',
                 unsafe_allow_html=True)
     cat_bucket = (
         df.groupby(["Category", "Aging Bucket"], observed=True)
-        .agg(Value=("Remaining Value", "sum"))
+        .agg(Value=("Available Value", "sum"))
         .reset_index()
     )
     cat_order = (
@@ -334,22 +393,23 @@ with c3:
         legend=dict(orientation="h", y=1.05, title=""),
         margin=dict(l=0, r=20, t=30, b=10), height=360,
         xaxis_title="", yaxis_title="Value (KD)",
-        xaxis_tickangle=-35,
+        xaxis_tickangle=-35, dragmode=False,
     )
-    st.plotly_chart(fig3, use_container_width=True)
+    st.plotly_chart(fig3, use_container_width=True, config=_CHART_CFG)
 
-# Chart 4 — Aging distribution pie
+# Chart 4 — Aging distribution pie (clickable)
 with c4:
-    st.markdown('<div class="section-title">Aging Distribution (% of Total Value)</div>',
+    st.markdown('<div class="section-title">Aging Distribution (% of Total Value) · click to filter ↓</div>',
                 unsafe_allow_html=True)
     pie_data = (
-        df.groupby("Aging Bucket", observed=True)["Remaining Value"]
+        df.groupby("Aging Bucket", observed=True)["Available Value"]
         .sum().reset_index()
     )
     fig4 = go.Figure(go.Pie(
         labels=pie_data["Aging Bucket"].astype(str),
-        values=pie_data["Remaining Value"],
+        values=pie_data["Available Value"],
         marker_colors=[BUCKET_COLORS.get(str(b), "#C9A84C") for b in pie_data["Aging Bucket"]],
+        pull=[0.08 if str(b) == st.session_state.chart_bucket else 0 for b in pie_data["Aging Bucket"]],
         hole=0.45,
         textinfo="label+percent",
         textfont=dict(color="#FAF6EF", size=12),
@@ -359,18 +419,38 @@ with c4:
         plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
         font_color="#FAF6EF", showlegend=False,
         margin=dict(l=20, r=20, t=20, b=10), height=360,
+        clickmode="event", dragmode=False,
     )
-    st.plotly_chart(fig4, use_container_width=True)
+    ev4 = st.plotly_chart(fig4, use_container_width=True, on_select="rerun", config=_CHART_CFG)
+    if ev4 and ev4.selection and ev4.selection.points:
+        clicked = str(ev4.selection.points[0].get("label", ""))
+        if clicked:
+            st.session_state.chart_bucket = None if st.session_state.chart_bucket == clicked else clicked
+            st.rerun()
 
 # ─────────────────────────────────────────────────────────
 # SUMMARY TABLE — Vendor × Bucket
 # ─────────────────────────────────────────────────────────
 st.markdown("---")
+
+# Active chart-click filter banner + clear button
+df_filtered = df.copy()
+if st.session_state.chart_bucket:
+    bcol, ccol = st.columns([6, 1])
+    bcol.markdown(
+        f'<div class="filter-bar">📊 Chart filter: <span class="filter-pill">{st.session_state.chart_bucket} days</span> &nbsp; (click same bucket again or Clear to reset)</div>',
+        unsafe_allow_html=True,
+    )
+    if ccol.button("✕ Clear", use_container_width=True):
+        st.session_state.chart_bucket = None
+        st.rerun()
+    df_filtered = df[df["Aging Bucket"].astype(str) == st.session_state.chart_bucket]
+
 st.markdown('<div class="section-title">Vendor Summary by Aging Bucket</div>', unsafe_allow_html=True)
 
 vendor_summary = (
-    df.groupby(["Vendor", "Aging Bucket"], observed=True)
-    .agg(Items=("Item No.", "nunique"), Qty=("Remaining Qty", "sum"), Value=("Remaining Value", "sum"))
+    df_filtered.groupby(["Vendor", "Aging Bucket"], observed=True)
+    .agg(Items=("Item No.", "nunique"), Qty=("Available Qty", "sum"), Value=("Available Value", "sum"))
     .reset_index()
     .pivot_table(index="Vendor", columns="Aging Bucket", values="Value", aggfunc="sum", fill_value=0)
     .reset_index()
@@ -398,15 +478,16 @@ st.markdown('<div class="section-title">🔎 Item-Level Detail</div>', unsafe_al
 
 drill_vendor = st.selectbox(
     "Select Vendor",
-    ["(All)"] + sorted(df["Vendor"].dropna().unique().tolist()),
+    ["(All)"] + sorted(df_filtered["Vendor"].dropna().unique().tolist()),
 )
-drill_df = df if drill_vendor == "(All)" else df[df["Vendor"] == drill_vendor]
+drill_df = df_filtered if drill_vendor == "(All)" else df_filtered[df_filtered["Vendor"] == drill_vendor]
 
 display_cols = ["Item No.", "Vendor", "Brand", "Category",
+                "Warehouse", "Bin",
                 "Posting Date", "Days", "Aging Bucket",
-                "Remaining Qty", "Unit Cost", "Remaining Value"]
+                "Available Qty", "Allocated Qty", "Unit Cost", "Available Value"]
 
-drill_display = drill_df[display_cols].sort_values(["Days"], ascending=False).copy()
+drill_display = drill_df[[c for c in display_cols if c in drill_df.columns]].sort_values(["Days"], ascending=False).copy()
 drill_display["Posting Date"] = drill_display["Posting Date"].dt.strftime("%Y-%m-%d")
 st.dataframe(drill_display, use_container_width=True, height=400)
 
@@ -414,7 +495,10 @@ st.dataframe(drill_display, use_container_width=True, height=400)
 # FOOTER
 # ─────────────────────────────────────────────────────────
 st.markdown("---")
+damaged_count = len(df[df["Bin"].str.lower().isin(DAMAGED_BINS)])
 st.caption(
     f"Data from Salesforce · {len(df):,} ledger entries · "
-    f"{df['Item No.'].nunique():,} unique items · Drops Group Demand Planning"
+    f"{df['Item No.'].nunique():,} unique items · "
+    f"Damaged Good lines: {damaged_count:,} · "
+    f"Drops Group Demand Planning"
 )
