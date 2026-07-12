@@ -255,7 +255,7 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     # Filter to Kuwait only when Country column is present.
     if "Country" in df.columns:
         df = df[df["Country"].str.lower() == "kwt"]
-        logger.info("process_inventory_aging: filtered to KWT → %s rows", len(df))
+        logger.info("process_inventory_aging: filtered to KWT -> %s rows", len(df))
 
     # Keep items starting with "KW", excluding "KWP", "KDD", and any gift items.
     upper = df["Item No."].str.upper().fillna("")
@@ -269,7 +269,7 @@ def process_inventory_aging(df: pd.DataFrame) -> pd.DataFrame:
     # Exclude specific vendors.
     EXCLUDED_VENDORS = {"EPIC FOOD SUPPLIES CO"}
     df = df[~df["Vendor"].str.upper().isin({v.upper() for v in EXCLUDED_VENDORS})]
-    logger.info("process_inventory_aging: after item filter → %s rows", len(df))
+    logger.info("process_inventory_aging: after item filter -> %s rows", len(df))
 
     for col in ("Item No.", "Category", "Brand", "Vendor"):
         df[col] = df[col].fillna("UNKNOWN").astype(str).str.strip().replace({"": "UNKNOWN", "nan": "UNKNOWN"})

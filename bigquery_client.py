@@ -77,10 +77,10 @@ def push_dataframe(df: pd.DataFrame, table: str) -> None:
     df_safe = df.rename(columns=safe_cols)
 
     job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
-    logger.info("BQ push → %s (%s rows)", table_ref, len(df_safe))
+    logger.info("BQ push -> %s (%s rows)", table_ref, len(df_safe))
     job = client.load_table_from_dataframe(df_safe, table_ref, job_config=job_config)
     job.result()
-    logger.info("BQ push complete → %s", table_ref)
+    logger.info("BQ push complete -> %s", table_ref)
 
 
 def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
@@ -97,8 +97,8 @@ def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
     return df
 
 
-# Column restore map for inventory_aging (BQ-safe → original names)
-# Keys are what _safe_col() produces: spaces→_ dots→_ then strip leading/trailing _
+# Column restore map for inventory_aging (BQ-safe -> original names)
+# Keys are what _safe_col() produces: spaces->_ dots->_ then strip leading/trailing _
 INV_RESTORE = {
     "Item_No":        "Item No.",
     "Posting_Date":   "Posting Date",
