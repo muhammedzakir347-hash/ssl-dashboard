@@ -199,25 +199,12 @@ if load_error:
 with st.sidebar:
     st.markdown("## 🔍 Filters")
 
-    # Quick date presets
-    preset = st.radio("Date Range", ["All", "YTD", "Last 6M", "Last 3M"], horizontal=True, index=0)
-
     min_date = df_full["Month_dt"].min().date()
     max_date = (df_full["Month_dt"].max() + pd.offsets.MonthEnd(0)).date()
-    _today = pd.Timestamp.today()
-
-    if preset == "YTD":
-        _default_from = _today.date().replace(month=1, day=1)
-    elif preset == "Last 6M":
-        _default_from = (_today - pd.DateOffset(months=6)).normalize().date()
-    elif preset == "Last 3M":
-        _default_from = (_today - pd.DateOffset(months=3)).normalize().date()
-    else:
-        _default_from = min_date
 
     col1, col2 = st.columns(2)
     with col1:
-        date_from = st.date_input("From", value=_default_from, min_value=min_date, max_value=max_date)
+        date_from = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
     with col2:
         date_to = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 
