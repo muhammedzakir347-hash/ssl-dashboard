@@ -167,13 +167,23 @@ def load_data():
 
 df_full, load_error = load_data()
 
+@st.cache_data(ttl=300)
+def _ssl_refresh_time():
+    try:
+        import bigquery_client as bq
+        return bq.get_last_updated(bq.TABLE_SSL)
+    except Exception:
+        return None
+
 # ──────────────────────────────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────────────────────────────
-st.markdown("""
+_rt = _ssl_refresh_time()
+_refresh_html = f"Last refreshed: <strong>{_rt}</strong>" if _rt else "Refresh time unavailable"
+st.markdown(f"""
 <div class="ssl-header">
   <h1>📦 Supplier Service Level (SSL) Dashboard</h1>
-  <p>Drops Group · Demand Planning · Auto-refreshes with each new daily run</p>
+  <p>Drops Group · Demand Planning · {_refresh_html}</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -189,13 +199,25 @@ if load_error:
 with st.sidebar:
     st.markdown("## 🔍 Filters")
 
-    # Date range — replicate the "6/1/2026 → 6/30/2026" picker from your screenshot
+    # Quick date presets
+    preset = st.radio("Date Range", ["All", "YTD", "Last 6M", "Last 3M"], horizontal=True, index=0)
+
     min_date = df_full["Month_dt"].min().date()
     max_date = (df_full["Month_dt"].max() + pd.offsets.MonthEnd(0)).date()
+    _today = pd.Timestamp.today()
+
+    if preset == "YTD":
+        _default_from = _today.date().replace(month=1, day=1)
+    elif preset == "Last 6M":
+        _default_from = (_today - pd.DateOffset(months=6)).normalize().date()
+    elif preset == "Last 3M":
+        _default_from = (_today - pd.DateOffset(months=3)).normalize().date()
+    else:
+        _default_from = min_date
 
     col1, col2 = st.columns(2)
     with col1:
-        date_from = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
+        date_from = st.date_input("From", value=_default_from, min_value=min_date, max_value=max_date)
     with col2:
         date_to = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 

@@ -178,13 +178,23 @@ def load_inventory():
 
 df_full, load_error = load_inventory()
 
+@st.cache_data(ttl=300)
+def _inv_refresh_time():
+    try:
+        import bigquery_client as bq
+        return bq.get_last_updated(bq.TABLE_INV)
+    except Exception:
+        return None
+
 # ─────────────────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────────────────
-st.markdown("""
+_rt = _inv_refresh_time()
+_refresh_html = f"Last refreshed: <strong>{_rt}</strong>" if _rt else "Refresh time unavailable"
+st.markdown(f"""
 <div class="ssl-header">
   <h1>📦 Inventory Aging</h1>
-  <p>Drops Group · Demand Planning · Remaining stock by posting date age</p>
+  <p>Drops Group · Demand Planning · {_refresh_html}</p>
 </div>
 """, unsafe_allow_html=True)
 

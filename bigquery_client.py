@@ -115,3 +115,17 @@ def table_exists(table: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def get_last_updated(table: str) -> str | None:
+    """Return the last-modified time of a BQ table in Kuwait time (UTC+3), or None on failure."""
+    try:
+        from datetime import timezone, timedelta
+        t = get_client().get_table(f"{PROJECT_ID}.{DATASET}.{table}")
+        if t.modified:
+            kwt = timezone(timedelta(hours=3))
+            local_dt = t.modified.astimezone(kwt)
+            return local_dt.strftime("%b %d, %Y  %I:%M %p")
+    except Exception:
+        pass
+    return None
