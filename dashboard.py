@@ -119,8 +119,16 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
 # ──────────────────────────────────────────────────────────────────────
 # DATA LOADING
 # ──────────────────────────────────────────────────────────────────────
-@st.cache_data(show_spinner="Loading data…", ttl=43200)  # cache 12 hours
-def load_data():
+def _ssl_bq_timestamp() -> str:
+    """Uncached — called on every page load to detect new data pushes."""
+    try:
+        import bigquery_client as bq
+        return bq.get_last_updated(bq.TABLE_SSL) or "no-bq"
+    except Exception:
+        return "no-bq"
+
+@st.cache_data(show_spinner="Loading data…")  # no TTL — cache key is BQ timestamp
+def load_data(cache_key: str):
     cache_path = config.DOWNLOADS_DIR / "raw_merged.csv"
     po_path    = config.DOWNLOADS_DIR / "po_latest.csv"
     wh_path    = config.DOWNLOADS_DIR / "warehouse_latest.csv"
@@ -165,21 +173,13 @@ def load_data():
         import traceback
         return None, f"{e}\n\n{traceback.format_exc()}"
 
-df_full, load_error = load_data()
-
-@st.cache_data(ttl=300)
-def _ssl_refresh_time():
-    try:
-        import bigquery_client as bq
-        return bq.get_last_updated(bq.TABLE_SSL)
-    except Exception:
-        return None
+_bq_ts = _ssl_bq_timestamp()
+df_full, load_error = load_data(_bq_ts)
 
 # ──────────────────────────────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────────────────────────────
-_rt = _ssl_refresh_time()
-_refresh_html = f"Last refreshed: <strong>{_rt}</strong>" if _rt else "Refresh time unavailable"
+_refresh_html = f"Last refreshed: <strong>{_bq_ts}</strong>" if _bq_ts != "no-bq" else "Refresh time unavailable"
 st.markdown(f"""
 <div class="ssl-header">
   <h1>📦 Supplier Service Level (SSL) Dashboard</h1>

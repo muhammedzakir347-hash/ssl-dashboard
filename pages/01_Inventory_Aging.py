@@ -129,8 +129,16 @@ def _coerce_numeric_cols(df: pd.DataFrame) -> pd.DataFrame:
         df["Available Value"] = df["Remaining Value"]
     return df
 
-@st.cache_data(show_spinner="Loading inventory data…", ttl=43200)
-def load_inventory():
+def _inv_bq_timestamp() -> str:
+    """Uncached — called on every page load to detect new data pushes."""
+    try:
+        import bigquery_client as bq
+        return bq.get_last_updated(bq.TABLE_INV) or "no-bq"
+    except Exception:
+        return "no-bq"
+
+@st.cache_data(show_spinner="Loading inventory data…")  # no TTL — cache key is BQ timestamp
+def load_inventory(cache_key: str):
     cache_path = config.DOWNLOADS_DIR / "inventory_aging.csv"
     raw_path   = config.DOWNLOADS_DIR / "inventory_latest.csv"
 
@@ -176,21 +184,13 @@ def load_inventory():
         import traceback
         return None, f"{e}\n\n{traceback.format_exc()}"
 
-df_full, load_error = load_inventory()
-
-@st.cache_data(ttl=300)
-def _inv_refresh_time():
-    try:
-        import bigquery_client as bq
-        return bq.get_last_updated(bq.TABLE_INV)
-    except Exception:
-        return None
+_bq_ts = _inv_bq_timestamp()
+df_full, load_error = load_inventory(_bq_ts)
 
 # ─────────────────────────────────────────────────────────
 # HEADER
 # ─────────────────────────────────────────────────────────
-_rt = _inv_refresh_time()
-_refresh_html = f"Last refreshed: <strong>{_rt}</strong>" if _rt else "Refresh time unavailable"
+_refresh_html = f"Last refreshed: <strong>{_bq_ts}</strong>" if _bq_ts != "no-bq" else "Refresh time unavailable"
 st.markdown(f"""
 <div class="ssl-header">
   <h1>📦 Inventory Aging</h1>
