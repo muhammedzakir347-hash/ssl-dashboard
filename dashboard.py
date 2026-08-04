@@ -17,6 +17,8 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+pd.set_option("styler.render.max_elements", 5_000_000)
+
 # Allow imports from same folder
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -668,8 +670,15 @@ drill_summary = (
 )
 drill_summary["SSL % (Value)"] = (drill_summary["Rec_Value"] / drill_summary["PO_Value"] * 100).round(1).where(drill_summary["PO_Value"] > 0)
 drill_summary = drill_summary.rename(columns={"PO_Value": "PO Value (KD)", "Rec_Value": "Received (KD)"})
+drill_sorted = drill_summary.sort_values("SSL % (Value)", ascending=True)
+
+_DRILL_LIMIT = 5000
+if len(drill_sorted) > _DRILL_LIMIT:
+    st.caption(f"Showing {_DRILL_LIMIT:,} worst-performing rows of {len(drill_sorted):,} total. Select a specific vendor to see all rows.")
+    drill_sorted = drill_sorted.head(_DRILL_LIMIT)
+
 st.dataframe(
-    drill_summary.sort_values("SSL % (Value)", ascending=True).style
+    drill_sorted.style
         .map(color_ssl, subset=["SSL % (Value)"])
         .format({"PO Value (KD)": "{:,.2f}", "Received (KD)": "{:,.2f}",
                  "SSL % (Value)": lambda x: f"{x:.1f}%" if pd.notna(x) else "—"}),
