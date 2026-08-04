@@ -202,9 +202,14 @@ with st.sidebar:
     min_date = df_full["Month_dt"].min().date()
     max_date = (df_full["Month_dt"].max() + pd.offsets.MonthEnd(0)).date()
 
+    # Default: last 24 months (user can go back to 2022 manually)
+    _default_from = max(
+        min_date,
+        (pd.Timestamp(max_date) - pd.DateOffset(months=23)).replace(day=1).date(),
+    )
     col1, col2 = st.columns(2)
     with col1:
-        date_from = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
+        date_from = st.date_input("From", value=_default_from, min_value=min_date, max_value=max_date)
     with col2:
         date_to = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 
@@ -310,21 +315,16 @@ total_po_val  = summary["PO_Value"].sum()
 total_rec_val = summary["Rec_Value"].sum()
 overall_ssl_v = (total_rec_val / total_po_val * 100) if total_po_val else 0
 
-total_po_qty  = summary["PO_Qty"].sum()
-total_rec_qty = summary["Rec_Qty"].sum()
-overall_ssl_q = (total_rec_qty / total_po_qty * 100) if total_po_qty else 0
-
 below_threshold = (summary["SSL_VALUE"] < ssl_threshold).sum()
 
-k1, k2, k3, k4, k5 = st.columns(5)
+k1, k2, k3, k4 = st.columns(4)
 k1.metric("Overall SSL (Value)", f"{overall_ssl_v:.1f}%",
           delta="▲ On track" if overall_ssl_v >= ssl_threshold else "▼ Below target",
           delta_color="normal" if overall_ssl_v >= ssl_threshold else "inverse")
-k2.metric("Overall SSL (Qty)",   f"{overall_ssl_q:.1f}%")
-k3.metric("PO Value",  f"{total_po_val:,.0f} KD")
-k4.metric("Received",  f"{total_rec_val:,.0f} KD")
-k5.metric(f"⚠️ Below {ssl_threshold}%", str(int(below_threshold)),
-          delta="vendors/brands" , delta_color="off")
+k2.metric("PO Value",  f"{total_po_val:,.0f} KD")
+k3.metric("Received",  f"{total_rec_val:,.0f} KD")
+k4.metric(f"⚠️ Below {ssl_threshold}%", str(int(below_threshold)),
+          delta="vendors/brands", delta_color="off")
 
 st.markdown("---")
 
@@ -338,10 +338,7 @@ display = summary.rename(columns={
     "PO_Value":  "PO Value (KD)",
     "Rec_Value": "Received Value (KD)",
     "SSL_VALUE": "SSL % (Value)",
-    "SSL_QTY":   "SSL % (Qty)",
-    "PO_Qty":    "PO Qty",
-    "Rec_Qty":   "Received Qty",
-}).sort_values("SSL % (Value)", ascending=True)
+}).sort_values("SSL % (Value)", ascending=True)[["Vendor", "Category", "Brand", "PO Value (KD)", "Received Value (KD)", "SSL % (Value)"]]
 
 def color_ssl(val):
     if pd.isna(val): return ""
@@ -351,14 +348,11 @@ def color_ssl(val):
 
 styled = (
     display.style
-    .map(color_ssl, subset=["SSL % (Value)", "SSL % (Qty)"])
+    .map(color_ssl, subset=["SSL % (Value)"])
     .format({
         "PO Value (KD)":       "{:,.2f}",
         "Received Value (KD)": "{:,.2f}",
-        "PO Qty":              "{:,.0f}",
-        "Received Qty":        "{:,.0f}",
         "SSL % (Value)":       lambda x: f"{x:.1f}%" if pd.notna(x) else "—",
-        "SSL % (Qty)":         lambda x: f"{x:.1f}%" if pd.notna(x) else "—",
     })
 )
 st.dataframe(styled, use_container_width=True, height=400)
@@ -376,98 +370,32 @@ _CHART_CFG = {
     ],
 }
 
-c1, c2 = st.columns(2)
-
-# Chart 1 — SSL by Vendor (bar)
-with c1:
-    st.markdown('<div class="section-title">SSL % by Vendor (Value)</div>', unsafe_allow_html=True)
-    vendor_ssl = (
-        df.groupby("Vendor", dropna=False)
-        .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
-        .reset_index()
-    )
-    vendor_ssl["SSL"] = np.where(vendor_ssl["PO_Value"] > 0, (vendor_ssl["Rec_Value"] / vendor_ssl["PO_Value"] * 100).round(1), np.nan)
-    vendor_ssl = vendor_ssl.sort_values("SSL")
-    fig1 = px.bar(
-        vendor_ssl, x="SSL", y="Vendor", orientation="h",
-        color="SSL",
-        color_continuous_scale=["#F8696B","#FFEB84","#63BE7B"],
-        range_color=[0,100],
-        text=vendor_ssl["SSL"].apply(lambda x: f"{x:.1f}%"),
-    )
-    fig1.add_vline(x=ssl_threshold, line_dash="dash", line_color="#C9A84C",
-                   annotation_text=f"Target {ssl_threshold}%")
-    fig1.update_layout(
-        plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
-        font_color="#FAF6EF", coloraxis_showscale=False,
-        margin=dict(l=0,r=20,t=10,b=10), height=350,
-        yaxis_title="", xaxis_title="SSL %", dragmode=False,
-    )
-    fig1.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-    st.plotly_chart(fig1, use_container_width=True, config=_CHART_CFG)
-
-# Chart 2 — Monthly SSL trend + PO vs Received bars
-with c2:
-    st.markdown('<div class="section-title">Monthly SSL Trend — Value & SSL %</div>', unsafe_allow_html=True)
-    monthly = (
-        df.groupby("Month", dropna=False)
-        .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
-        .reset_index()
-        .sort_values("Month")
-    )
-    monthly["SSL"] = np.where(monthly["PO_Value"] > 0, (monthly["Rec_Value"] / monthly["PO_Value"] * 100).round(1), np.nan)
-    fig2 = go.Figure()
-    # PO Value bars (left axis)
-    fig2.add_trace(go.Bar(
-        x=monthly["Month"], y=monthly["PO_Value"],
-        name="PO Value",
-        marker_color="#1a3a2a", marker_line_color="#4a7a5a", marker_line_width=1,
-        text=monthly["PO_Value"].apply(lambda x: f"{x:,.0f}"),
-        textposition="inside", insidetextanchor="middle",
-        textfont=dict(color="#aaaaaa", size=9),
-        yaxis="y1",
-        hovertemplate="<b>%{x}</b><br>PO Value: KD %{y:,.0f}<extra></extra>",
-    ))
-    # Received Value bars (left axis)
-    fig2.add_trace(go.Bar(
-        x=monthly["Month"], y=monthly["Rec_Value"],
-        name="Received",
-        marker_color="#C9A84C", opacity=0.85,
-        text=monthly["Rec_Value"].apply(lambda x: f"{x:,.0f}"),
-        textposition="inside", insidetextanchor="middle",
-        textfont=dict(color="#0f1f17", size=9),
-        yaxis="y1",
-        hovertemplate="<b>%{x}</b><br>Received: KD %{y:,.0f}<extra></extra>",
-    ))
-    # SSL % line (right axis)
-    fig2.add_trace(go.Scatter(
-        x=monthly["Month"], y=monthly["SSL"],
-        mode="lines+markers+text",
-        line=dict(color="#FAF6EF", width=2),
-        marker=dict(size=7, color="#FAF6EF"),
-        text=monthly["SSL"].apply(lambda x: f"{x:.1f}%" if pd.notna(x) else ""),
-        textposition="top center",
-        textfont=dict(color="#FAF6EF", size=10),
-        name="SSL %",
-        yaxis="y2",
-        hovertemplate="<b>%{x}</b><br>SSL: %{y:.1f}%<extra></extra>",
-    ))
-    fig2.add_hline(y=ssl_threshold, line_dash="dash", line_color="#F8696B",
-                   annotation_text=f"Target {ssl_threshold}%",
-                   annotation_font_color="#F8696B", yref="y2")
-    fig2.update_layout(
-        barmode="overlay",
-        plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
-        font_color="#FAF6EF",
-        legend=dict(orientation="h", y=1.05, font=dict(size=11)),
-        margin=dict(l=0, r=50, t=30, b=10), height=350,
-        xaxis_title="",
-        yaxis=dict(title="Value (KD)", side="left", showgrid=False),
-        yaxis2=dict(title="SSL %", side="right", overlaying="y",
-                    range=[0, 115], showgrid=False, ticksuffix="%"),
-        dragmode=False,
-    )
-    st.plotly_chart(fig2, use_container_width=True, config=_CHART_CFG)
+# Chart 1 — SSL by Vendor (full width)
+st.markdown('<div class="section-title">SSL % by Vendor (Value)</div>', unsafe_allow_html=True)
+vendor_ssl = (
+    df.groupby("Vendor", dropna=False)
+    .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
+    .reset_index()
+)
+vendor_ssl["SSL"] = np.where(vendor_ssl["PO_Value"] > 0, (vendor_ssl["Rec_Value"] / vendor_ssl["PO_Value"] * 100).round(1), np.nan)
+vendor_ssl = vendor_ssl.sort_values("SSL")
+fig1 = px.bar(
+    vendor_ssl, x="SSL", y="Vendor", orientation="h",
+    color="SSL",
+    color_continuous_scale=["#F8696B","#FFEB84","#63BE7B"],
+    range_color=[0,100],
+    text=vendor_ssl["SSL"].apply(lambda x: f"{x:.1f}%"),
+)
+fig1.add_vline(x=ssl_threshold, line_dash="dash", line_color="#C9A84C",
+               annotation_text=f"Target {ssl_threshold}%")
+fig1.update_layout(
+    plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
+    font_color="#FAF6EF", coloraxis_showscale=False,
+    margin=dict(l=0,r=20,t=10,b=10), height=420,
+    yaxis_title="", xaxis_title="SSL %", dragmode=False,
+)
+fig1.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
+st.plotly_chart(fig1, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # SECOND CHARTS ROW
@@ -532,6 +460,199 @@ with c4:
     st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
+# YEAR-OVER-YEAR COMPARISON
+# ──────────────────────────────────────────────────────────────────────
+st.markdown("---")
+st.markdown('<div class="section-title">📅 Year-over-Year Monthly Comparison</div>', unsafe_allow_html=True)
+
+_MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+
+_yoy = df.copy()
+_yoy["_yr"]  = _yoy["Month"].str[:4].astype(int)
+_yoy["_mn"]  = _yoy["Month"].str[5:7].astype(int)
+
+_all_yrs   = sorted(_yoy["_yr"].unique())
+_show_yrs  = _all_yrs[-4:] if len(_all_yrs) > 4 else _all_yrs
+
+if len(_show_yrs) >= 2:
+    _ya = (
+        _yoy[_yoy["_yr"].isin(_show_yrs)]
+        .groupby(["_yr","_mn"], as_index=False)
+        .agg(PO=("PO_Value","sum"), Rec=("Rec_Value","sum"))
+    )
+    _yc = _show_yrs[-1]
+    _yp = _show_yrs[-2]
+    _has = set(_ya[_ya["_yr"] == _yc]["_mn"])
+
+    _pp  = _ya.pivot_table(index="_mn", columns="_yr", values="PO",  aggfunc="sum")
+    _rp  = _ya.pivot_table(index="_mn", columns="_yr", values="Rec", aggfunc="sum")
+
+    def _v(piv, mn, y):
+        try:
+            v = piv.at[mn, y]
+            return v if pd.notna(v) else np.nan
+        except KeyError:
+            return np.nan
+
+    def _build_yoy(metric):
+        g = "% Growth" if metric != "ssl" else "Δ pp"
+        rows = []
+        for mn in range(1, 13):
+            row = {"Month": _MN[mn-1]}
+            for y in _show_yrs:
+                po = _v(_pp, mn, y); rec = _v(_rp, mn, y)
+                no_curr = mn not in _has and y == _yc
+                if no_curr:
+                    row[str(y)] = "—"
+                elif metric == "po":
+                    row[str(y)] = f"{po:,.0f}" if pd.notna(po) else "—"
+                elif metric == "rec":
+                    row[str(y)] = f"{rec:,.0f}" if pd.notna(rec) else "—"
+                else:
+                    row[str(y)] = f"{rec/po*100:.1f}%" if (pd.notna(po) and po > 0) else "—"
+
+            po_c = _v(_pp, mn, _yc); po_p = _v(_pp, mn, _yp)
+            rc_c = _v(_rp, mn, _yc); rc_p = _v(_rp, mn, _yp)
+            if mn not in _has:
+                row[g] = "—"
+            elif metric == "po":
+                row[g] = f"{(po_c/po_p - 1)*100:+.0f}%" if (pd.notna(po_p) and po_p) else "—"
+            elif metric == "rec":
+                row[g] = f"{(rc_c/rc_p - 1)*100:+.0f}%" if (pd.notna(rc_p) and rc_p) else "—"
+            else:
+                if pd.notna(po_c) and po_c > 0 and pd.notna(po_p) and po_p > 0:
+                    row[g] = f"{rc_c/po_c*100 - rc_p/po_p*100:+.1f}pp"
+                else:
+                    row[g] = "—"
+            rows.append(row)
+
+        # TOTAL
+        t = {"Month": "TOTAL"}
+        for y in _show_yrs:
+            d = _ya[_ya["_yr"] == y]
+            if metric == "po":   t[str(y)] = f"{d['PO'].sum():,.0f}"
+            elif metric == "rec": t[str(y)] = f"{d['Rec'].sum():,.0f}"
+            else:
+                ps = d["PO"].sum(); rs = d["Rec"].sum()
+                t[str(y)] = f"{rs/ps*100:.1f}%" if ps else "—"
+        dc = _ya[_ya["_yr"] == _yc]; dp = _ya[_ya["_yr"] == _yp]
+        if metric == "po":
+            tc, tp = dc["PO"].sum(), dp["PO"].sum()
+            t[g] = f"{(tc/tp - 1)*100:+.0f}%" if tp else "—"
+        elif metric == "rec":
+            tc, tp = dc["Rec"].sum(), dp["Rec"].sum()
+            t[g] = f"{(tc/tp - 1)*100:+.0f}%" if tp else "—"
+        else:
+            sc = dc["Rec"].sum()/dc["PO"].sum()*100 if dc["PO"].sum() else np.nan
+            sp = dp["Rec"].sum()/dp["PO"].sum()*100 if dp["PO"].sum() else np.nan
+            t[g] = f"{sc - sp:+.1f}pp" if (pd.notna(sc) and pd.notna(sp)) else "—"
+        rows.append(t)
+
+        # M.Average
+        a = {"Month": "M.Average"}
+        for y in _show_yrs:
+            d = _ya[_ya["_yr"] == y]; n = d["_mn"].nunique()
+            if metric == "po":   a[str(y)] = f"{d['PO'].sum()/n:,.0f}" if n else "—"
+            elif metric == "rec": a[str(y)] = f"{d['Rec'].sum()/n:,.0f}" if n else "—"
+            else:
+                ps = d["PO"].sum(); rs = d["Rec"].sum()
+                a[str(y)] = f"{rs/ps*100:.1f}%" if ps else "—"
+        nc = dc["_mn"].nunique(); np2 = dp["_mn"].nunique()
+        if metric == "po":
+            ac = dc["PO"].sum()/nc if nc else 0; ap = dp["PO"].sum()/np2 if np2 else 0
+            a[g] = f"{(ac/ap - 1)*100:+.0f}%" if ap else "—"
+        elif metric == "rec":
+            ac = dc["Rec"].sum()/nc if nc else 0; ap = dp["Rec"].sum()/np2 if np2 else 0
+            a[g] = f"{(ac/ap - 1)*100:+.0f}%" if ap else "—"
+        else:
+            sc = dc["Rec"].sum()/dc["PO"].sum()*100 if dc["PO"].sum() else np.nan
+            sp = dp["Rec"].sum()/dp["PO"].sum()*100 if dp["PO"].sum() else np.nan
+            a[g] = f"{sc - sp:+.1f}pp" if (pd.notna(sc) and pd.notna(sp)) else "—"
+        rows.append(a)
+
+        cols = ["Month"] + [str(y) for y in _show_yrs] + [g]
+        return pd.DataFrame(rows, columns=cols), g
+
+    def _style_growth(val):
+        s = str(val)
+        if s.startswith("+"): return "color:#155724; font-weight:700"
+        if s.startswith("-"): return "color:#cc0000; font-weight:700"
+        return ""
+
+    def _style_ssl(val):
+        s = str(val)
+        if "%" not in s: return ""
+        try: n = float(s.replace("%",""))
+        except: return ""
+        if n >= 95: return "background-color:#d4edda; color:#155724; font-weight:700"
+        if n >= 80: return "background-color:#fff3cd; color:#856404; font-weight:700"
+        return "background-color:#ffd7d7; color:#cc0000; font-weight:700"
+
+    _ycols = [str(y) for y in _show_yrs]
+
+    st.markdown('<div class="section-title" style="margin-top:8px">📦 PO Value (KD)</div>', unsafe_allow_html=True)
+    _po_t, _po_g = _build_yoy("po")
+    st.dataframe(_po_t.style.map(_style_growth, subset=[_po_g]),
+                 use_container_width=True, hide_index=True)
+
+    st.markdown('<div class="section-title" style="margin-top:8px">📥 Received Value (KD)</div>', unsafe_allow_html=True)
+    _rec_t, _rec_g = _build_yoy("rec")
+    st.dataframe(_rec_t.style.map(_style_growth, subset=[_rec_g]),
+                 use_container_width=True, hide_index=True)
+
+    st.markdown('<div class="section-title" style="margin-top:8px">📊 SSL % (Value)</div>', unsafe_allow_html=True)
+    _ssl_t, _ssl_g = _build_yoy("ssl")
+    st.dataframe(
+        _ssl_t.style.map(_style_ssl, subset=_ycols).map(_style_growth, subset=[_ssl_g]),
+        use_container_width=True, hide_index=True,
+    )
+else:
+    st.info("Select a date range spanning at least 2 years to see year-over-year comparisons.")
+
+# ── MoM chart data (reused below) ──
+mom = (
+    df.groupby("Month", dropna=False)
+    .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
+    .reset_index().sort_values("Month")
+)
+mom["SSL_Val"] = np.where(mom["PO_Value"] > 0, (mom["Rec_Value"] / mom["PO_Value"] * 100).round(1), np.nan)
+
+# Bar chart — PO vs Received by month (side by side)
+fig_mom = go.Figure()
+fig_mom.add_trace(go.Bar(
+    x=mom["Month"], y=mom["PO_Value"], name="PO Value",
+    marker_color="#1a3a2a", marker_line_color="#4a7a5a", marker_line_width=1,
+    text=mom["PO_Value"].map(lambda x: f"{x/1000:.0f}K"),
+    textposition="outside", textfont=dict(color="#FAF6EF", size=10),
+))
+fig_mom.add_trace(go.Bar(
+    x=mom["Month"], y=mom["Rec_Value"], name="Received",
+    marker_color="#C9A84C",
+    text=mom["Rec_Value"].map(lambda x: f"{x/1000:.0f}K"),
+    textposition="outside", textfont=dict(color="#C9A84C", size=10),
+))
+fig_mom.add_trace(go.Scatter(
+    x=mom["Month"], y=mom["SSL_Val"], name="SSL %",
+    mode="lines+markers+text",
+    line=dict(color="#FAF6EF", width=2), marker=dict(size=8),
+    text=mom["SSL_Val"].map(lambda x: f"{x:.1f}%" if pd.notna(x) else ""),
+    textposition="top center", textfont=dict(color="#FAF6EF", size=11),
+    yaxis="y2",
+))
+fig_mom.update_layout(
+    barmode="group",
+    plot_bgcolor="#0f1f17", paper_bgcolor="#0f1f17",
+    font_color="#FAF6EF",
+    legend=dict(orientation="h", y=1.08),
+    margin=dict(l=0, r=60, t=40, b=10), height=360,
+    xaxis_title="",
+    yaxis=dict(title="Value (KD)", showgrid=False),
+    yaxis2=dict(title="SSL %", overlaying="y", side="right", range=[0,115], showgrid=False, ticksuffix="%"),
+    dragmode=False,
+)
+st.plotly_chart(fig_mom, use_container_width=True, config=_CHART_CFG)
+
+# ──────────────────────────────────────────────────────────────────────
 # DRILL-DOWN — Raw item level
 # ──────────────────────────────────────────────────────────────────────
 st.markdown("---")
@@ -542,13 +663,16 @@ drill_df = df if drill_vendor == "(All)" else df[df["Vendor"] == drill_vendor]
 
 drill_summary = (
     drill_df.groupby(["Item_No","Vendor","Brand","Category","Month"], dropna=False)
-    .agg(PO_Qty=("PO_Qty","sum"), Rec_Qty=("Rec_Qty","sum"),
-         PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
+    .agg(PO_Value=("PO_Value","sum"), Rec_Value=("Rec_Value","sum"))
     .reset_index()
 )
-drill_summary["SSL_VALUE"] = (drill_summary["Rec_Value"] / drill_summary["PO_Value"] * 100).round(1).where(drill_summary["PO_Value"] > 0)
+drill_summary["SSL % (Value)"] = (drill_summary["Rec_Value"] / drill_summary["PO_Value"] * 100).round(1).where(drill_summary["PO_Value"] > 0)
+drill_summary = drill_summary.rename(columns={"PO_Value": "PO Value (KD)", "Rec_Value": "Received (KD)"})
 st.dataframe(
-    drill_summary.sort_values("SSL_VALUE", ascending=True),
+    drill_summary.sort_values("SSL % (Value)", ascending=True).style
+        .map(color_ssl, subset=["SSL % (Value)"])
+        .format({"PO Value (KD)": "{:,.2f}", "Received (KD)": "{:,.2f}",
+                 "SSL % (Value)": lambda x: f"{x:.1f}%" if pd.notna(x) else "—"}),
     use_container_width=True, height=350
 )
 

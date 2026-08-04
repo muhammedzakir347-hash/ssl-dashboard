@@ -114,7 +114,7 @@ def main() -> int:
         try:
             import bigquery_client
             logger.info("Pushing SSL data to BigQuery...")
-            bigquery_client.push_dataframe(sheets["Raw_Merged_Data"], bigquery_client.TABLE_SSL)
+            bigquery_client.upsert_by_month(sheets["Raw_Merged_Data"], bigquery_client.TABLE_SSL)
             if "Inventory_Aging" in sheets:
                 logger.info("Pushing inventory aging to BigQuery...")
                 bigquery_client.push_dataframe(sheets["Inventory_Aging"], bigquery_client.TABLE_INV)

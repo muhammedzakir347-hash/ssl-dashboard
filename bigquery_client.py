@@ -66,21 +66,54 @@ def _safe_col(name: str) -> str:
 
 
 def push_dataframe(df: pd.DataFrame, table: str) -> None:
-    """Overwrite a BigQuery table with a DataFrame.
+    """Overwrite a BigQuery table with a DataFrame (WRITE_TRUNCATE).
     Column names are sanitized to BQ-safe identifiers automatically.
     """
     client = get_client()
     table_ref = f"{PROJECT_ID}.{DATASET}.{table}"
-
-    # Sanitize column names (BQ rejects spaces, dots, etc.)
     safe_cols = {c: _safe_col(c) for c in df.columns}
     df_safe = df.rename(columns=safe_cols)
-
     job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
     logger.info("BQ push -> %s (%s rows)", table_ref, len(df_safe))
     job = client.load_table_from_dataframe(df_safe, table_ref, job_config=job_config)
     job.result()
     logger.info("BQ push complete -> %s", table_ref)
+
+
+def append_dataframe(df: pd.DataFrame, table: str) -> None:
+    """Append df to a BigQuery table (WRITE_APPEND). No deduplication.
+    Safe to call when you know the rows don't already exist in the table.
+    Column names are sanitized automatically.
+    """
+    client = get_client()
+    table_ref = f"{PROJECT_ID}.{DATASET}.{table}"
+    safe_cols = {c: _safe_col(c) for c in df.columns}
+    df_safe = df.rename(columns=safe_cols)
+    job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+    logger.info("BQ append -> %s (%s rows)", table_ref, len(df_safe))
+    job = client.load_table_from_dataframe(df_safe, table_ref, job_config=job_config)
+    job.result()
+    logger.info("BQ append complete -> %s", table_ref)
+
+
+def upsert_by_month(df: pd.DataFrame, table: str, month_col: str = "Month") -> None:
+    """Replace rows for months present in df while preserving all other months.
+    Uses read + WRITE_TRUNCATE (no DML) so it works on the BQ free tier.
+    Column names are sanitized automatically.
+    """
+    if table_exists(table):
+        existing = read_table(table)
+        months_to_replace = {str(m) for m in df[month_col].dropna().unique()}
+        existing = existing[~existing[month_col].isin(months_to_replace)]
+        logger.info(
+            "BQ upsert: keeping %d existing rows, replacing %d months",
+            len(existing), len(months_to_replace),
+        )
+        combined = pd.concat([existing, df], ignore_index=True)
+    else:
+        combined = df.copy()
+
+    push_dataframe(combined, table)
 
 
 def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
