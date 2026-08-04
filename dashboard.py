@@ -462,7 +462,7 @@ with c4:
     st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
-# YEAR-OVER-YEAR COMPARISON
+# YEAR-OVER-YEAR COMPARISON — single combined table
 # ──────────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown('<div class="section-title">📅 Year-over-Year Monthly Comparison</div>', unsafe_allow_html=True)
@@ -470,142 +470,97 @@ st.markdown('<div class="section-title">📅 Year-over-Year Monthly Comparison</
 _MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
 
 _yoy = df.copy()
-_yoy["_yr"]  = _yoy["Month"].str[:4].astype(int)
-_yoy["_mn"]  = _yoy["Month"].str[5:7].astype(int)
+_yoy["_yr"] = _yoy["Month"].str[:4].astype(int)
+_yoy["_mn"] = _yoy["Month"].str[5:7].astype(int)
+_all_yrs = sorted(_yoy["_yr"].unique())
 
-_all_yrs   = sorted(_yoy["_yr"].unique())
-_show_yrs  = _all_yrs[-4:] if len(_all_yrs) > 4 else _all_yrs
+if len(_all_yrs) >= 2:
+    _yc = _all_yrs[-1]   # current year
+    _yp = _all_yrs[-2]   # previous year
 
-if len(_show_yrs) >= 2:
     _ya = (
-        _yoy[_yoy["_yr"].isin(_show_yrs)]
+        _yoy[_yoy["_yr"].isin([_yp, _yc])]
         .groupby(["_yr","_mn"], as_index=False)
         .agg(PO=("PO_Value","sum"), Rec=("Rec_Value","sum"))
     )
-    _yc = _show_yrs[-1]
-    _yp = _show_yrs[-2]
     _has = set(_ya[_ya["_yr"] == _yc]["_mn"])
 
-    _pp  = _ya.pivot_table(index="_mn", columns="_yr", values="PO",  aggfunc="sum")
-    _rp  = _ya.pivot_table(index="_mn", columns="_yr", values="Rec", aggfunc="sum")
+    _pp = _ya.pivot_table(index="_mn", columns="_yr", values="PO",  aggfunc="sum")
+    _rp = _ya.pivot_table(index="_mn", columns="_yr", values="Rec", aggfunc="sum")
 
-    def _v(piv, mn, y):
-        try:
-            v = piv.at[mn, y]
-            return v if pd.notna(v) else np.nan
-        except KeyError:
-            return np.nan
+    def _g(piv, mn, y):
+        try: v = piv.at[mn, y]; return float(v) if pd.notna(v) else np.nan
+        except: return np.nan
 
-    def _build_yoy(metric):
-        g = "% Growth" if metric != "ssl" else "Δ pp"
-        rows = []
-        for mn in range(1, 13):
-            row = {"Month": _MN[mn-1]}
-            for y in _show_yrs:
-                po = _v(_pp, mn, y); rec = _v(_rp, mn, y)
-                no_curr = mn not in _has and y == _yc
-                if no_curr:
-                    row[str(y)] = "—"
-                elif metric == "po":
-                    row[str(y)] = f"{po:,.0f}" if pd.notna(po) else "—"
-                elif metric == "rec":
-                    row[str(y)] = f"{rec:,.0f}" if pd.notna(rec) else "—"
-                else:
-                    row[str(y)] = f"{rec/po*100:.1f}%" if (pd.notna(po) and po > 0) else "—"
+    # Column labels
+    C_PO_P  = f"{_yp} PO (KD)"
+    C_PO_C  = f"{_yc} PO (KD)"
+    C_POG   = "PO Growth"
+    C_RC_P  = f"{_yp} Rec (KD)"
+    C_RC_C  = f"{_yc} Rec (KD)"
+    C_RCG   = "Rec Growth"
+    C_SSL_P = f"{_yp} SSL %"
+    C_SSL_C = f"{_yc} SSL %"
+    C_SSLD  = "SSL Δ"
+    ALL_COLS = ["Month", C_PO_P, C_PO_C, C_POG, C_RC_P, C_RC_C, C_RCG, C_SSL_P, C_SSL_C, C_SSLD]
 
-            po_c = _v(_pp, mn, _yc); po_p = _v(_pp, mn, _yp)
-            rc_c = _v(_rp, mn, _yc); rc_p = _v(_rp, mn, _yp)
-            if mn not in _has:
-                row[g] = "—"
-            elif metric == "po":
-                row[g] = f"{(po_c/po_p - 1)*100:+.0f}%" if (pd.notna(po_p) and po_p) else "—"
-            elif metric == "rec":
-                row[g] = f"{(rc_c/rc_p - 1)*100:+.0f}%" if (pd.notna(rc_p) and rc_p) else "—"
-            else:
-                if pd.notna(po_c) and po_c > 0 and pd.notna(po_p) and po_p > 0:
-                    row[g] = f"{rc_c/po_c*100 - rc_p/po_p*100:+.1f}pp"
-                else:
-                    row[g] = "—"
-            rows.append(row)
+    def _row(label, po_p, po_c, rc_p, rc_c, no_curr=False):
+        ssl_p = rc_p/po_p*100 if (pd.notna(po_p) and po_p > 0) else np.nan
+        ssl_c = rc_c/po_c*100 if (pd.notna(po_c) and po_c > 0 and not no_curr) else np.nan
+        return {
+            "Month":  label,
+            C_PO_P:  f"{po_p:,.0f}" if pd.notna(po_p) else "—",
+            C_PO_C:  "—" if no_curr else (f"{po_c:,.0f}" if pd.notna(po_c) else "—"),
+            C_POG:   "—" if (no_curr or not pd.notna(po_p) or po_p == 0) else f"{(po_c/po_p - 1)*100:+.0f}%",
+            C_RC_P:  f"{rc_p:,.0f}" if pd.notna(rc_p) else "—",
+            C_RC_C:  "—" if no_curr else (f"{rc_c:,.0f}" if pd.notna(rc_c) else "—"),
+            C_RCG:   "—" if (no_curr or not pd.notna(rc_p) or rc_p == 0) else f"{(rc_c/rc_p - 1)*100:+.0f}%",
+            C_SSL_P: f"{ssl_p:.1f}%" if pd.notna(ssl_p) else "—",
+            C_SSL_C: "—" if no_curr else (f"{ssl_c:.1f}%" if pd.notna(ssl_c) else "—"),
+            C_SSLD:  "—" if (no_curr or pd.isna(ssl_p) or pd.isna(ssl_c)) else f"{ssl_c - ssl_p:+.1f}pp",
+        }
 
-        # TOTAL
-        t = {"Month": "TOTAL"}
-        for y in _show_yrs:
-            d = _ya[_ya["_yr"] == y]
-            if metric == "po":   t[str(y)] = f"{d['PO'].sum():,.0f}"
-            elif metric == "rec": t[str(y)] = f"{d['Rec'].sum():,.0f}"
-            else:
-                ps = d["PO"].sum(); rs = d["Rec"].sum()
-                t[str(y)] = f"{rs/ps*100:.1f}%" if ps else "—"
-        dc = _ya[_ya["_yr"] == _yc]; dp = _ya[_ya["_yr"] == _yp]
-        if metric == "po":
-            tc, tp = dc["PO"].sum(), dp["PO"].sum()
-            t[g] = f"{(tc/tp - 1)*100:+.0f}%" if tp else "—"
-        elif metric == "rec":
-            tc, tp = dc["Rec"].sum(), dp["Rec"].sum()
-            t[g] = f"{(tc/tp - 1)*100:+.0f}%" if tp else "—"
-        else:
-            sc = dc["Rec"].sum()/dc["PO"].sum()*100 if dc["PO"].sum() else np.nan
-            sp = dp["Rec"].sum()/dp["PO"].sum()*100 if dp["PO"].sum() else np.nan
-            t[g] = f"{sc - sp:+.1f}pp" if (pd.notna(sc) and pd.notna(sp)) else "—"
-        rows.append(t)
+    rows = []
+    for mn in range(1, 13):
+        rows.append(_row(
+            _MN[mn-1],
+            _g(_pp, mn, _yp), _g(_pp, mn, _yc),
+            _g(_rp, mn, _yp), _g(_rp, mn, _yc),
+            no_curr=(mn not in _has),
+        ))
 
-        # M.Average
-        a = {"Month": "M.Average"}
-        for y in _show_yrs:
-            d = _ya[_ya["_yr"] == y]; n = d["_mn"].nunique()
-            if metric == "po":   a[str(y)] = f"{d['PO'].sum()/n:,.0f}" if n else "—"
-            elif metric == "rec": a[str(y)] = f"{d['Rec'].sum()/n:,.0f}" if n else "—"
-            else:
-                ps = d["PO"].sum(); rs = d["Rec"].sum()
-                a[str(y)] = f"{rs/ps*100:.1f}%" if ps else "—"
-        nc = dc["_mn"].nunique(); np2 = dp["_mn"].nunique()
-        if metric == "po":
-            ac = dc["PO"].sum()/nc if nc else 0; ap = dp["PO"].sum()/np2 if np2 else 0
-            a[g] = f"{(ac/ap - 1)*100:+.0f}%" if ap else "—"
-        elif metric == "rec":
-            ac = dc["Rec"].sum()/nc if nc else 0; ap = dp["Rec"].sum()/np2 if np2 else 0
-            a[g] = f"{(ac/ap - 1)*100:+.0f}%" if ap else "—"
-        else:
-            sc = dc["Rec"].sum()/dc["PO"].sum()*100 if dc["PO"].sum() else np.nan
-            sp = dp["Rec"].sum()/dp["PO"].sum()*100 if dp["PO"].sum() else np.nan
-            a[g] = f"{sc - sp:+.1f}pp" if (pd.notna(sc) and pd.notna(sp)) else "—"
-        rows.append(a)
+    dc = _ya[_ya["_yr"] == _yc]; dp = _ya[_ya["_yr"] == _yp]
+    po_pt = dp["PO"].sum(); po_ct = dc["PO"].sum()
+    rc_pt = dp["Rec"].sum(); rc_ct = dc["Rec"].sum()
+    rows.append(_row("TOTAL",   po_pt, po_ct, rc_pt, rc_ct))
+    nc = dc["_mn"].nunique(); np_n = dp["_mn"].nunique()
+    rows.append(_row(
+        "M.Average",
+        po_pt/np_n if np_n else np.nan, po_ct/nc if nc else np.nan,
+        rc_pt/np_n if np_n else np.nan, rc_ct/nc if nc else np.nan,
+    ))
 
-        cols = ["Month"] + [str(y) for y in _show_yrs] + [g]
-        return pd.DataFrame(rows, columns=cols), g
+    _tbl = pd.DataFrame(rows, columns=ALL_COLS)
 
-    def _style_growth(val):
+    def _sg(val):
         s = str(val)
         if s.startswith("+"): return "color:#155724; font-weight:700"
         if s.startswith("-"): return "color:#cc0000; font-weight:700"
         return ""
 
-    def _style_ssl(val):
+    def _ss(val):
         s = str(val)
-        if "%" not in s: return ""
+        if "%" not in s or "pp" in s: return ""
         try: n = float(s.replace("%",""))
         except: return ""
         if n >= 95: return "background-color:#d4edda; color:#155724; font-weight:700"
         if n >= 80: return "background-color:#fff3cd; color:#856404; font-weight:700"
         return "background-color:#ffd7d7; color:#cc0000; font-weight:700"
 
-    _ycols = [str(y) for y in _show_yrs]
-
-    st.markdown('<div class="section-title" style="margin-top:8px">📦 PO Value (KD)</div>', unsafe_allow_html=True)
-    _po_t, _po_g = _build_yoy("po")
-    st.dataframe(_po_t.style.map(_style_growth, subset=[_po_g]),
-                 use_container_width=True, hide_index=True)
-
-    st.markdown('<div class="section-title" style="margin-top:8px">📥 Received Value (KD)</div>', unsafe_allow_html=True)
-    _rec_t, _rec_g = _build_yoy("rec")
-    st.dataframe(_rec_t.style.map(_style_growth, subset=[_rec_g]),
-                 use_container_width=True, hide_index=True)
-
-    st.markdown('<div class="section-title" style="margin-top:8px">📊 SSL % (Value)</div>', unsafe_allow_html=True)
-    _ssl_t, _ssl_g = _build_yoy("ssl")
     st.dataframe(
-        _ssl_t.style.map(_style_ssl, subset=_ycols).map(_style_growth, subset=[_ssl_g]),
+        _tbl.style
+            .map(_sg, subset=[C_POG, C_RCG, C_SSLD])
+            .map(_ss, subset=[C_SSL_P, C_SSL_C]),
         use_container_width=True, hide_index=True,
     )
 else:
