@@ -204,10 +204,10 @@ with st.sidebar:
     min_date = df_full["Month_dt"].min().date()
     max_date = (df_full["Month_dt"].max() + pd.offsets.MonthEnd(0)).date()
 
-    # Default: last 24 months (user can go back to 2022 manually)
+    # Default: last 6 months (user can go back to 2022 manually)
     _default_from = max(
         min_date,
-        (pd.Timestamp(max_date) - pd.DateOffset(months=23)).replace(day=1).date(),
+        (pd.Timestamp(max_date) - pd.DateOffset(months=5)).replace(day=1).date(),
     )
     col1, col2 = st.columns(2)
     with col1:
