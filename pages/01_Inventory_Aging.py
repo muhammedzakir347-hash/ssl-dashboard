@@ -57,39 +57,74 @@ BUCKET_COLORS = {
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] { background-color: #0f1f17; }
-[data-testid="stSidebar"] * { color: #FAF6EF !important; }
+/* ── SIDEBAR ─────────────────────────────────────────── */
+[data-testid="stSidebar"] { background-color: #e8f0ec; }
+[data-testid="stSidebar"] * { color: #1a3a2a !important; }
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] { background-color: #0f1f17; }
+    [data-testid="stSidebar"] * { color: #FAF6EF !important; }
+}
+[data-theme="dark"] [data-testid="stSidebar"] { background-color: #0f1f17 !important; }
+[data-theme="dark"] [data-testid="stSidebar"] * { color: #FAF6EF !important; }
+[data-theme="light"] [data-testid="stSidebar"] { background-color: #e8f0ec !important; }
+[data-theme="light"] [data-testid="stSidebar"] * { color: #1a3a2a !important; }
 
+/* ── METRIC CARDS ────────────────────────────────────── */
 div[data-testid="metric-container"] {
-    background: #1a3a2a;
+    background: rgba(201,168,76,0.10);
     border: 1px solid #C9A84C;
     border-radius: 10px;
     padding: 16px 20px;
 }
-div[data-testid="metric-container"] label { color: #C9A84C !important; font-size:13px; }
+div[data-testid="metric-container"] label { color: #856404 !important; font-size:13px; }
 div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-    color: #FAF6EF !important; font-size:28px; font-weight:700;
+    color: #1a3a2a !important; font-size:28px; font-weight:700;
 }
 div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
-    color: #FAF6EF !important; font-size:13px;
+    color: #555 !important; font-size:13px;
 }
+@media (prefers-color-scheme: dark) {
+    div[data-testid="metric-container"] { background: #1a3a2a; }
+    div[data-testid="metric-container"] label { color: #C9A84C !important; }
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #FAF6EF !important; }
+    div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { color: #FAF6EF !important; }
+}
+[data-theme="dark"] div[data-testid="metric-container"] { background: #1a3a2a; }
+[data-theme="dark"] div[data-testid="metric-container"] label { color: #C9A84C !important; }
+[data-theme="dark"] div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #FAF6EF !important; }
+[data-theme="dark"] div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { color: #FAF6EF !important; }
 
+/* ── HEADER ──────────────────────────────────────────── */
 .ssl-header {
-    background: linear-gradient(90deg,#0f1f17,#1a3a2a);
+    background: linear-gradient(90deg, #e8f0ec, #f0f8f0);
     border-bottom: 2px solid #C9A84C;
     padding: 18px 28px 14px;
     border-radius: 10px;
     margin-bottom: 10px;
 }
-.ssl-header h1 { color:#FAF6EF; margin:0; font-size:26px; }
-.ssl-header p  { color:#C9A84C; margin:4px 0 0; font-size:13px; }
+.ssl-header h1 { color: #1a3a2a; margin:0; font-size:26px; }
+.ssl-header p  { color: #555;    margin:4px 0 0; font-size:13px; }
+.ssl-header strong { color: #C9A84C; }
+@media (prefers-color-scheme: dark) {
+    .ssl-header { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+    .ssl-header h1 { color: #FAF6EF; }
+    .ssl-header p  { color: #C9A84C; }
+}
+[data-theme="dark"] .ssl-header { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+[data-theme="dark"] .ssl-header h1 { color: #FAF6EF; }
+[data-theme="dark"] .ssl-header p  { color: #C9A84C; }
+[data-theme="light"] .ssl-header { background: linear-gradient(90deg, #e8f0ec, #f0f8f0); }
+[data-theme="light"] .ssl-header h1 { color: #1a3a2a; }
+[data-theme="light"] .ssl-header p  { color: #555; }
 
+/* ── SECTION TITLE ───────────────────────────────────── */
 .section-title {
     color: #C9A84C; font-weight:700; font-size:15px;
     border-left:4px solid #C9A84C; padding-left:10px;
     margin: 18px 0 10px;
 }
 
+/* ── FILTER BAR ──────────────────────────────────────── */
 .filter-bar {
     background: rgba(201,168,76,0.12);
     border: 1px solid #C9A84C;

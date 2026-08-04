@@ -51,37 +51,67 @@ st.set_page_config(
 # ──────────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-/* dark sidebar */
-[data-testid="stSidebar"] { background-color: #0f1f17; }
-[data-testid="stSidebar"] * { color: #FAF6EF !important; }
+/* ── SIDEBAR ─────────────────────────────────────────── */
+[data-testid="stSidebar"] { background-color: #e8f0ec; }
+[data-testid="stSidebar"] * { color: #1a3a2a !important; }
+@media (prefers-color-scheme: dark) {
+    [data-testid="stSidebar"] { background-color: #0f1f17; }
+    [data-testid="stSidebar"] * { color: #FAF6EF !important; }
+}
+[data-theme="dark"] [data-testid="stSidebar"] { background-color: #0f1f17 !important; }
+[data-theme="dark"] [data-testid="stSidebar"] * { color: #FAF6EF !important; }
+[data-theme="light"] [data-testid="stSidebar"] { background-color: #e8f0ec !important; }
+[data-theme="light"] [data-testid="stSidebar"] * { color: #1a3a2a !important; }
 
-/* metric cards */
+/* ── METRIC CARDS ────────────────────────────────────── */
 div[data-testid="metric-container"] {
-    background: #1a3a2a;
+    background: rgba(201,168,76,0.10);
     border: 1px solid #C9A84C;
     border-radius: 10px;
     padding: 16px 20px;
 }
-div[data-testid="metric-container"] label { color: #C9A84C !important; font-size:13px; }
+div[data-testid="metric-container"] label { color: #856404 !important; font-size:13px; }
 div[data-testid="metric-container"] div[data-testid="stMetricValue"] {
-    color: #FAF6EF !important; font-size:28px; font-weight:700;
+    color: #1a3a2a !important; font-size:28px; font-weight:700;
 }
 div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
-    color: #FAF6EF !important; font-size:13px;
+    color: #555 !important; font-size:13px;
 }
+@media (prefers-color-scheme: dark) {
+    div[data-testid="metric-container"] { background: #1a3a2a; }
+    div[data-testid="metric-container"] label { color: #C9A84C !important; }
+    div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #FAF6EF !important; }
+    div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { color: #FAF6EF !important; }
+}
+[data-theme="dark"] div[data-testid="metric-container"] { background: #1a3a2a; }
+[data-theme="dark"] div[data-testid="metric-container"] label { color: #C9A84C !important; }
+[data-theme="dark"] div[data-testid="metric-container"] div[data-testid="stMetricValue"] { color: #FAF6EF !important; }
+[data-theme="dark"] div[data-testid="metric-container"] div[data-testid="stMetricDelta"] { color: #FAF6EF !important; }
 
-/* header bar — always dark regardless of theme */
+/* ── HEADER ──────────────────────────────────────────── */
 .ssl-header {
-    background: linear-gradient(90deg,#0f1f17,#1a3a2a);
+    background: linear-gradient(90deg, #e8f0ec, #f0f8f0);
     border-bottom: 2px solid #C9A84C;
     padding: 18px 28px 14px;
     border-radius: 10px;
     margin-bottom: 10px;
 }
-.ssl-header h1 { color:#FAF6EF; margin:0; font-size:26px; }
-.ssl-header p  { color:#C9A84C; margin:4px 0 0; font-size:13px; }
+.ssl-header h1 { color: #1a3a2a; margin:0; font-size:26px; }
+.ssl-header p  { color: #555;    margin:4px 0 0; font-size:13px; }
+.ssl-header strong { color: #C9A84C; }
+@media (prefers-color-scheme: dark) {
+    .ssl-header { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+    .ssl-header h1 { color: #FAF6EF; }
+    .ssl-header p  { color: #C9A84C; }
+}
+[data-theme="dark"] .ssl-header { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+[data-theme="dark"] .ssl-header h1 { color: #FAF6EF; }
+[data-theme="dark"] .ssl-header p  { color: #C9A84C; }
+[data-theme="light"] .ssl-header { background: linear-gradient(90deg, #e8f0ec, #f0f8f0); }
+[data-theme="light"] .ssl-header h1 { color: #1a3a2a; }
+[data-theme="light"] .ssl-header p  { color: #555; }
 
-/* active filter pills shown below header */
+/* ── FILTER BAR ──────────────────────────────────────── */
 .filter-bar {
     background: rgba(201,168,76,0.12);
     border: 1px solid #C9A84C;
@@ -105,6 +135,32 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
     font-size: 12px;
     white-space: nowrap;
 }
+
+/* ── COMPARE CTA BANNER ──────────────────────────────── */
+.compare-cta {
+    background: linear-gradient(90deg, #e8f0ec, #f0f8f0);
+    border: 2px solid #C9A84C;
+    border-radius: 12px;
+    padding: 18px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin: 4px 0 16px;
+}
+.compare-cta-icon { font-size: 32px; line-height: 1; }
+.compare-cta-text h3 { color: #1a3a2a; margin:0 0 4px; font-size:16px; }
+.compare-cta-text p  { color: #555; margin:0; font-size:13px; }
+@media (prefers-color-scheme: dark) {
+    .compare-cta { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+    .compare-cta-text h3 { color: #C9A84C; }
+    .compare-cta-text p  { color: #FAF6EF; }
+}
+[data-theme="dark"] .compare-cta { background: linear-gradient(90deg, #0f1f17, #1a3a2a); }
+[data-theme="dark"] .compare-cta-text h3 { color: #C9A84C; }
+[data-theme="dark"] .compare-cta-text p  { color: #FAF6EF; }
+[data-theme="light"] .compare-cta { background: linear-gradient(90deg, #e8f0ec, #f0f8f0); }
+[data-theme="light"] .compare-cta-text h3 { color: #1a3a2a; }
+[data-theme="light"] .compare-cta-text p  { color: #555; }
 
 /* section headers — gold works on both light and dark backgrounds */
 .section-title {
@@ -462,109 +518,19 @@ with c4:
     st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
-# YEAR-OVER-YEAR COMPARISON — single combined table
+# COMPARE CTA — links to dedicated comparison page
 # ──────────────────────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown('<div class="section-title">📅 Year-over-Year Monthly Comparison</div>', unsafe_allow_html=True)
-
-_MN = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-
-_yoy = df.copy()
-_yoy["_yr"] = _yoy["Month"].str[:4].astype(int)
-_yoy["_mn"] = _yoy["Month"].str[5:7].astype(int)
-_all_yrs = sorted(_yoy["_yr"].unique())
-
-if len(_all_yrs) >= 2:
-    _yc = _all_yrs[-1]   # current year
-    _yp = _all_yrs[-2]   # previous year
-
-    _ya = (
-        _yoy[_yoy["_yr"].isin([_yp, _yc])]
-        .groupby(["_yr","_mn"], as_index=False)
-        .agg(PO=("PO_Value","sum"), Rec=("Rec_Value","sum"))
-    )
-    _has = set(_ya[_ya["_yr"] == _yc]["_mn"])
-
-    _pp = _ya.pivot_table(index="_mn", columns="_yr", values="PO",  aggfunc="sum")
-    _rp = _ya.pivot_table(index="_mn", columns="_yr", values="Rec", aggfunc="sum")
-
-    def _g(piv, mn, y):
-        try: v = piv.at[mn, y]; return float(v) if pd.notna(v) else np.nan
-        except: return np.nan
-
-    # Column labels
-    C_PO_P  = f"{_yp} PO (KD)"
-    C_PO_C  = f"{_yc} PO (KD)"
-    C_POG   = "PO Growth"
-    C_RC_P  = f"{_yp} Rec (KD)"
-    C_RC_C  = f"{_yc} Rec (KD)"
-    C_RCG   = "Rec Growth"
-    C_SSL_P = f"{_yp} SSL %"
-    C_SSL_C = f"{_yc} SSL %"
-    C_SSLD  = "SSL Δ"
-    ALL_COLS = ["Month", C_PO_P, C_PO_C, C_POG, C_RC_P, C_RC_C, C_RCG, C_SSL_P, C_SSL_C, C_SSLD]
-
-    def _row(label, po_p, po_c, rc_p, rc_c, no_curr=False):
-        ssl_p = rc_p/po_p*100 if (pd.notna(po_p) and po_p > 0) else np.nan
-        ssl_c = rc_c/po_c*100 if (pd.notna(po_c) and po_c > 0 and not no_curr) else np.nan
-        return {
-            "Month":  label,
-            C_PO_P:  f"{po_p:,.0f}" if pd.notna(po_p) else "—",
-            C_PO_C:  "—" if no_curr else (f"{po_c:,.0f}" if pd.notna(po_c) else "—"),
-            C_POG:   "—" if (no_curr or not pd.notna(po_p) or po_p == 0) else f"{(po_c/po_p - 1)*100:+.0f}%",
-            C_RC_P:  f"{rc_p:,.0f}" if pd.notna(rc_p) else "—",
-            C_RC_C:  "—" if no_curr else (f"{rc_c:,.0f}" if pd.notna(rc_c) else "—"),
-            C_RCG:   "—" if (no_curr or not pd.notna(rc_p) or rc_p == 0) else f"{(rc_c/rc_p - 1)*100:+.0f}%",
-            C_SSL_P: f"{ssl_p:.1f}%" if pd.notna(ssl_p) else "—",
-            C_SSL_C: "—" if no_curr else (f"{ssl_c:.1f}%" if pd.notna(ssl_c) else "—"),
-            C_SSLD:  "—" if (no_curr or pd.isna(ssl_p) or pd.isna(ssl_c)) else f"{ssl_c - ssl_p:+.1f}pp",
-        }
-
-    rows = []
-    for mn in range(1, 13):
-        rows.append(_row(
-            _MN[mn-1],
-            _g(_pp, mn, _yp), _g(_pp, mn, _yc),
-            _g(_rp, mn, _yp), _g(_rp, mn, _yc),
-            no_curr=(mn not in _has),
-        ))
-
-    dc = _ya[_ya["_yr"] == _yc]; dp = _ya[_ya["_yr"] == _yp]
-    po_pt = dp["PO"].sum(); po_ct = dc["PO"].sum()
-    rc_pt = dp["Rec"].sum(); rc_ct = dc["Rec"].sum()
-    rows.append(_row("TOTAL",   po_pt, po_ct, rc_pt, rc_ct))
-    nc = dc["_mn"].nunique(); np_n = dp["_mn"].nunique()
-    rows.append(_row(
-        "M.Average",
-        po_pt/np_n if np_n else np.nan, po_ct/nc if nc else np.nan,
-        rc_pt/np_n if np_n else np.nan, rc_ct/nc if nc else np.nan,
-    ))
-
-    _tbl = pd.DataFrame(rows, columns=ALL_COLS)
-
-    def _sg(val):
-        s = str(val)
-        if s.startswith("+"): return "color:#155724; font-weight:700"
-        if s.startswith("-"): return "color:#cc0000; font-weight:700"
-        return ""
-
-    def _ss(val):
-        s = str(val)
-        if "%" not in s or "pp" in s: return ""
-        try: n = float(s.replace("%",""))
-        except: return ""
-        if n >= 95: return "background-color:#d4edda; color:#155724; font-weight:700"
-        if n >= 80: return "background-color:#fff3cd; color:#856404; font-weight:700"
-        return "background-color:#ffd7d7; color:#cc0000; font-weight:700"
-
-    st.dataframe(
-        _tbl.style
-            .map(_sg, subset=[C_POG, C_RCG, C_SSLD])
-            .map(_ss, subset=[C_SSL_P, C_SSL_C]),
-        use_container_width=True, hide_index=True,
-    )
-else:
-    st.info("Select a date range spanning at least 2 years to see year-over-year comparisons.")
+st.markdown("""
+<div class="compare-cta">
+  <div class="compare-cta-icon">📊</div>
+  <div class="compare-cta-text">
+    <h3>Year-over-Year Comparison</h3>
+    <p>Pick any years, filter by vendor / brand / category, explore SSL trends, PO &amp; Received charts, and export to Excel.</p>
+  </div>
+</div>
+""", unsafe_allow_html=True)
+st.page_link("pages/02_Comparison.py", label="Open Comparison Page", icon="📊")
 
 # ── MoM chart data (reused below) ──
 mom = (
