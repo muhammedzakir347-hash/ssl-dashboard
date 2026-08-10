@@ -122,7 +122,7 @@ def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
     """
     client = get_client()
     query = f"SELECT * FROM `{PROJECT_ID}.{DATASET}.{table}`"
-    logger.info("BQ read ← %s", f"{DATASET}.{table}")
+    logger.info("BQ read <- %s", f"{DATASET}.{table}")
     df = client.query(query).to_dataframe()
     if restore_columns:
         df = df.rename(columns=restore_columns)
