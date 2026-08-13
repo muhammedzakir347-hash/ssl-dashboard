@@ -17,8 +17,6 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-pd.set_option("styler.render.max_elements", 5_000_000)
-
 # Allow imports from same folder
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -185,58 +183,87 @@ def _ssl_bq_timestamp() -> str:
     except Exception:
         return "no-bq"
 
-@st.cache_data(show_spinner="Loading data…")  # no TTL — cache key is BQ timestamp
-def load_data(cache_key: str):
-    cache_path = config.DOWNLOADS_DIR / "raw_merged.csv"
-    po_path    = config.DOWNLOADS_DIR / "po_latest.csv"
-    wh_path    = config.DOWNLOADS_DIR / "warehouse_latest.csv"
 
+@st.cache_data(ttl=3600)
+def _get_months_meta(cache_key: str) -> list[str]:
+    """Cheap one-column query — returns all distinct Month values for date-picker
+    bounds. Avoids loading 1.5 M rows just to know the min/max date."""
     try:
-        import bigquery_client
+        import bigquery_client as bq
+        if bq.table_exists(bq.TABLE_SSL):
+            return bq.get_distinct_months(bq.TABLE_SSL)
+    except Exception:
+        pass
+    # Fallback: scan local CSV (fast — only Month column)
+    cache_path = config.DOWNLOADS_DIR / "raw_merged.csv"
+    if cache_path.exists():
+        df = pd.read_csv(cache_path, usecols=["Month"], dtype=str)
+        return sorted(df["Month"].dropna().unique().tolist())
+    return []
 
-        # 1. BigQuery — fastest, works on Cloud and local
-        try:
-            if bigquery_client.table_exists(bigquery_client.TABLE_SSL):
-                df = bigquery_client.read_table(bigquery_client.TABLE_SSL)
-                for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
-                    df[col] = pd.to_numeric(df[col], errors="coerce")
-                df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
-                return df, None
-        except Exception:
-            pass  # fall through to CSV / SF
 
-        # 2. Local CSV cache (written by scheduled task)
-        if cache_path.exists():
-            df = pd.read_csv(cache_path, dtype=str, low_memory=False)
+@st.cache_data(show_spinner="Loading data…")
+def load_data(from_month: str, to_month: str, cache_key: str):
+    """Load only the selected date range — avoids pulling 1.5 M rows every load."""
+    try:
+        import bigquery_client as bq
+        if bq.table_exists(bq.TABLE_SSL):
+            df = bq.read_table_range(bq.TABLE_SSL, from_month, to_month)
             for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
                 df[col] = pd.to_numeric(df[col], errors="coerce")
-
-        elif po_path.exists() and wh_path.exists():
-            sheets = data_processor.run_pipeline(po_path, wh_path)
-            df = sheets["Raw_Merged_Data"].copy()
-
-        elif config.SF_USERNAME and config.SF_PASSWORD:
-            import salesforce_fetcher
-            with st.spinner("Fetching data from Salesforce (first load ~4 min)…"):
-                frames = salesforce_fetcher.fetch_dataframes()
-            sheets = data_processor.run_pipeline_from_dfs(frames["po"], frames["warehouse"])
-            df = sheets["Raw_Merged_Data"].copy()
-
-        else:
-            return None, "No data found. Run main.py to populate the database."
-
-        df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
-        return df, None
+            df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
+            return df, None
     except Exception as e:
         import traceback
         return None, f"{e}\n\n{traceback.format_exc()}"
 
-_bq_ts = _ssl_bq_timestamp()
-df_full, load_error = load_data(_bq_ts)
+    # Fallback: local CSV filtered to requested range
+    cache_path = config.DOWNLOADS_DIR / "raw_merged.csv"
+    if cache_path.exists():
+        df = pd.read_csv(cache_path, dtype=str, low_memory=False)
+        for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df["Month_dt"] = pd.to_datetime(df["Month"].astype(str) + "-01", errors="coerce")
+        df = df[(df["Month"] >= from_month) & (df["Month"] <= to_month)]
+        return df, None
+    return None, "No data found. Run main.py to populate the database."
+
+
+_bq_ts     = _ssl_bq_timestamp()
+_all_months = _get_months_meta(_bq_ts)   # ~10 rows, very fast
+
+if not _all_months:
+    st.error("No data found. Run `python main.py` to populate the database.")
+    st.stop()
+
+_min_date    = pd.to_datetime(_all_months[0] + "-01").date()
+_max_date    = (pd.to_datetime(_all_months[-1] + "-01") + pd.offsets.MonthEnd(0)).date()
+_default_from = max(
+    _min_date,
+    (pd.Timestamp(_max_date) - pd.DateOffset(months=5)).replace(day=1).date(),
+)
 
 # ──────────────────────────────────────────────────────────────────────
 # HEADER
 # ──────────────────────────────────────────────────────────────────────
+# ── Sidebar part 1: date pickers — shown before data loads ────────────
+with st.sidebar:
+    st.markdown("## 🔍 Filters")
+    _sc1, _sc2 = st.columns(2)
+    with _sc1:
+        date_from = st.date_input("From", value=_default_from,
+                                  min_value=_min_date, max_value=_max_date)
+    with _sc2:
+        date_to = st.date_input("To", value=_max_date,
+                                min_value=_min_date, max_value=_max_date)
+    st.markdown("---")
+
+# Load only the selected date range (cached per range + BQ timestamp)
+_from_month = date_from.strftime("%Y-%m")
+_to_month   = date_to.strftime("%Y-%m")
+df_full, load_error = load_data(_from_month, _to_month, _bq_ts)
+
+# ── Header (shown after date picker so refresh timestamp is live) ──────
 _refresh_html = f"Last refreshed: <strong>{_bq_ts}</strong>" if _bq_ts != "no-bq" else "Refresh time unavailable"
 st.markdown(f"""
 <div class="ssl-header">
@@ -250,43 +277,15 @@ if load_error:
     st.info("Run `python main.py` from the project folder to fetch and process data first.")
     st.stop()
 
-# ──────────────────────────────────────────────────────────────────────
-# SIDEBAR FILTERS
-# ──────────────────────────────────────────────────────────────────────
-# (active filter bar is rendered AFTER sidebar so it can read selections)
+# ── Sidebar part 2: dimension filters — needs loaded data ──────────────
 with st.sidebar:
-    st.markdown("## 🔍 Filters")
-
-    min_date = df_full["Month_dt"].min().date()
-    max_date = (df_full["Month_dt"].max() + pd.offsets.MonthEnd(0)).date()
-
-    # Default: last 6 months (user can go back to 2022 manually)
-    _default_from = max(
-        min_date,
-        (pd.Timestamp(max_date) - pd.DateOffset(months=5)).replace(day=1).date(),
-    )
-    col1, col2 = st.columns(2)
-    with col1:
-        date_from = st.date_input("From", value=_default_from, min_value=min_date, max_value=max_date)
-    with col2:
-        date_to = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
-
-    st.markdown("---")
-
-    # Vendor filter
     all_vendors = sorted(df_full["Vendor"].dropna().unique())
     selected_vendors = st.multiselect("Vendor", all_vendors, placeholder="All vendors")
-
-    # Brand filter
     all_brands = sorted(df_full["Brand"].dropna().unique())
     selected_brands = st.multiselect("Brand", all_brands, placeholder="All brands")
-
-    # Category filter
     all_cats = sorted(df_full["Category"].dropna().unique())
     selected_cats = st.multiselect("Category", all_cats, placeholder="All categories")
-
     st.markdown("---")
-    # SSL threshold highlight
     ssl_threshold = st.slider("⚠️ Flag SSL below (%)", 0, 100, 80)
 
 
@@ -413,7 +412,7 @@ styled = (
         "SSL % (Value)":       lambda x: f"{x:.1f}%" if pd.notna(x) else "—",
     })
 )
-st.dataframe(styled, use_container_width=True, height=400)
+st.dataframe(styled, width="stretch", height=400)
 
 # ──────────────────────────────────────────────────────────────────────
 # CHARTS ROW
@@ -453,7 +452,7 @@ fig1.update_layout(
     yaxis_title="", xaxis_title="SSL %", dragmode=False,
 )
 fig1.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-st.plotly_chart(fig1, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig1, width="stretch", config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # SECOND CHARTS ROW
@@ -486,7 +485,7 @@ with c3:
         yaxis_title="", xaxis_title="SSL %", dragmode=False,
     )
     fig3.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-    st.plotly_chart(fig3, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig3, width="stretch", config=_CHART_CFG)
 
 # Chart 4 — PO Value vs Received Value by Category (grouped bar)
 with c4:
@@ -515,7 +514,7 @@ with c4:
         margin=dict(l=0,r=20,t=30,b=10), height=400,
         yaxis_title="Value (KD)", xaxis_title="", dragmode=False,
     )
-    st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig4, width="stretch", config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # COMPARE CTA — links to dedicated comparison page
@@ -573,7 +572,7 @@ fig_mom.update_layout(
     yaxis2=dict(title="SSL %", overlaying="y", side="right", range=[0,115], showgrid=False, ticksuffix="%"),
     dragmode=False,
 )
-st.plotly_chart(fig_mom, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig_mom, width="stretch", config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # DRILL-DOWN — Raw item level
@@ -603,7 +602,7 @@ st.dataframe(
         .map(color_ssl, subset=["SSL % (Value)"])
         .format({"PO Value (KD)": "{:,.2f}", "Received (KD)": "{:,.2f}",
                  "SSL % (Value)": lambda x: f"{x:.1f}%" if pd.notna(x) else "—"}),
-    use_container_width=True, height=350
+    width="stretch", height=350
 )
 
 # ──────────────────────────────────────────────────────────────────────

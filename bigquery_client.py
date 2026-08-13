@@ -130,6 +130,38 @@ def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
     return df
 
 
+def get_distinct_months(table: str) -> list[str]:
+    """Return sorted list of all distinct Month values — cheap metadata query.
+    Used to populate date-picker bounds without loading the full table.
+    """
+    client = get_client()
+    query = (
+        f"SELECT DISTINCT Month FROM `{PROJECT_ID}.{DATASET}.{table}` "
+        f"WHERE Month IS NOT NULL ORDER BY Month"
+    )
+    result = client.query(query).to_dataframe()
+    return sorted(result["Month"].dropna().tolist())
+
+
+def read_table_range(table: str, from_month: str, to_month: str,
+                     restore_columns: dict | None = None) -> pd.DataFrame:
+    """Load only rows where Month is between from_month and to_month (inclusive).
+    Dramatically cheaper than read_table() for large historical tables —
+    e.g. a 6-month window returns ~100K rows instead of 1.5M.
+    """
+    client = get_client()
+    query = (
+        f"SELECT * FROM `{PROJECT_ID}.{DATASET}.{table}` "
+        f"WHERE Month >= '{from_month}' AND Month <= '{to_month}'"
+    )
+    logger.info("BQ read range <- %s [%s .. %s]", f"{DATASET}.{table}", from_month, to_month)
+    df = client.query(query).to_dataframe()
+    if restore_columns:
+        df = df.rename(columns=restore_columns)
+    logger.info("BQ read range complete: %s rows", len(df))
+    return df
+
+
 # Column restore map for inventory_aging (BQ-safe -> original names)
 # Keys are what _safe_col() produces: spaces->_ dots->_ then strip leading/trailing _
 INV_RESTORE = {

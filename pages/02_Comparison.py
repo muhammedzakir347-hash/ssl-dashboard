@@ -40,8 +40,6 @@ for _key in ("SF_USERNAME", "SF_PASSWORD", "SF_SECURITY_TOKEN", "SF_DOMAIN"):
     except Exception:
         pass
 
-pd.set_option("styler.render.max_elements", 5_000_000)
-
 import bigquery_client as bq
 import config
 
@@ -156,11 +154,28 @@ def _bq_ts() -> str:
         return "no-bq"
 
 
-@st.cache_data(show_spinner="Loading SSL data…")
-def _load_ssl(cache_key: str):
+@st.cache_data(ttl=3600)
+def _get_all_years(cache_key: str) -> list[int]:
+    """Cheap metadata query — distinct years for the year selector."""
     try:
         if bq.table_exists(bq.TABLE_SSL):
-            df = bq.read_table(bq.TABLE_SSL)
+            months = bq.get_distinct_months(bq.TABLE_SSL)
+            return sorted({int(m[:4]) for m in months}, reverse=True)
+    except Exception:
+        pass
+    return []
+
+
+@st.cache_data(show_spinner="Loading SSL data…")
+def _load_ssl(years: tuple, cache_key: str):
+    """Load only the selected years from BQ — avoids pulling 1.5 M rows."""
+    if not years:
+        return None, "No years selected."
+    from_month = f"{min(years)}-01"
+    to_month   = f"{max(years)}-12"
+    try:
+        if bq.table_exists(bq.TABLE_SSL):
+            df = bq.read_table_range(bq.TABLE_SSL, from_month, to_month)
             for col in ("PO_Qty", "Rec_Qty", "SSL_QTY", "PO_Value", "Rec_Value", "SSL_VALUE"):
                 if col in df.columns:
                     df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -171,8 +186,8 @@ def _load_ssl(cache_key: str):
     return None, "No BigQuery data available. Run main.py first."
 
 
-_ts = _bq_ts()
-df_full, _err = _load_ssl(_ts)
+_ts           = _bq_ts()
+_all_years_int = _get_all_years(_ts)   # cheap — just distinct years
 
 # ──────────────────────────────────────────────────────────────────────
 # HEADER
@@ -185,16 +200,11 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-if _err:
-    st.error(_err)
+if not _all_years_int:
+    st.error("No data found. Run `python main.py` to populate the database.")
     st.stop()
 
-# ──────────────────────────────────────────────────────────────────────
-# SIDEBAR
-# ──────────────────────────────────────────────────────────────────────
-_all_years_str = sorted(df_full["Month"].str[:4].unique(), reverse=True)
-_all_years_int = [int(y) for y in _all_years_str]
-
+# ── Sidebar part 1: year selector (before data load) ──────────────────
 with st.sidebar:
     st.markdown("## 📅 Year Selector")
     _default_years = _all_years_int[:2] if len(_all_years_int) >= 2 else _all_years_int
@@ -202,29 +212,35 @@ with st.sidebar:
         "Compare years",
         options=_all_years_int,
         default=_default_years,
-        help="Select 2–4 years to compare side by side",
+        help="Select 2-4 years to compare side by side",
     )
-
-    st.markdown("---")
-    st.markdown("## 🔍 Filters")
-
-    all_vendors = sorted(df_full["Vendor"].dropna().unique())
-    sel_vendors = st.multiselect("Vendor", all_vendors, placeholder="All vendors")
-
-    all_brands = sorted(df_full["Brand"].dropna().unique())
-    sel_brands = st.multiselect("Brand", all_brands, placeholder="All brands")
-
-    all_cats = sorted(df_full["Category"].dropna().unique())
-    sel_cats = st.multiselect("Category", all_cats, placeholder="All categories")
 
 if not selected_years:
     st.info("Select at least one year from the sidebar to get started.")
     st.stop()
 
+# Load only the selected years (cached per year tuple + BQ timestamp)
+df_full, _err = _load_ssl(tuple(sorted(selected_years)), _ts)
+
+if _err:
+    st.error(_err)
+    st.stop()
+
+# ── Sidebar part 2: dimension filters (after data load) ───────────────
+with st.sidebar:
+    st.markdown("---")
+    st.markdown("## 🔍 Filters")
+    all_vendors = sorted(df_full["Vendor"].dropna().unique())
+    sel_vendors = st.multiselect("Vendor", all_vendors, placeholder="All vendors")
+    all_brands = sorted(df_full["Brand"].dropna().unique())
+    sel_brands = st.multiselect("Brand", all_brands, placeholder="All brands")
+    all_cats = sorted(df_full["Category"].dropna().unique())
+    sel_cats = st.multiselect("Category", all_cats, placeholder="All categories")
+
 # ──────────────────────────────────────────────────────────────────────
 # APPLY FILTERS
 # ──────────────────────────────────────────────────────────────────────
-df = df_full[df_full["Month"].str[:4].astype(int).isin(selected_years)].copy()
+df = df_full[df_full["Month"].str[:4].astype(int).isin(selected_years)].copy()  # keep only selected years within loaded range
 if sel_vendors: df = df[df["Vendor"].isin(sel_vendors)]
 if sel_brands:  df = df[df["Brand"].isin(sel_brands)]
 if sel_cats:    df = df[df["Category"].isin(sel_cats)]
@@ -405,7 +421,7 @@ _styled = _tbl.style.map(_style_ssl, subset=_ssl_cols)
 if _growth_cols:
     _styled = _styled.map(_style_growth, subset=_growth_cols)
 
-st.dataframe(_styled, use_container_width=True, hide_index=True)
+st.dataframe(_styled, width="stretch", hide_index=True)
 
 # ──────────────────────────────────────────────────────────────────────
 # CHARTS
@@ -455,7 +471,7 @@ fig_ssl.update_layout(
     xaxis_title="",
     dragmode=False,
 )
-st.plotly_chart(fig_ssl, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig_ssl, width="stretch", config=_CHART_CFG)
 
 st.markdown("---")
 
@@ -482,7 +498,7 @@ with _c1:
         yaxis_title="Value (KD)", xaxis_title="",
         dragmode=False,
     )
-    st.plotly_chart(fig_po, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig_po, width="stretch", config=_CHART_CFG)
 
 with _c2:
     st.markdown('<div class="section-title">Received Value by Month (KD)</div>', unsafe_allow_html=True)
@@ -504,7 +520,7 @@ with _c2:
         yaxis_title="Value (KD)", xaxis_title="",
         dragmode=False,
     )
-    st.plotly_chart(fig_rec, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig_rec, width="stretch", config=_CHART_CFG)
 
 st.markdown("---")
 
@@ -547,7 +563,7 @@ fig_heat.update_layout(
     xaxis_title="", yaxis_title="",
     dragmode=False,
 )
-st.plotly_chart(fig_heat, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig_heat, width="stretch", config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # EXCEL EXPORT

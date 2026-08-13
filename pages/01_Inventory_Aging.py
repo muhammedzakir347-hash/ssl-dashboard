@@ -370,7 +370,7 @@ with c1:
         xaxis_title="Aging Bucket (days)", yaxis_title="Available Value (KD)",
         bargap=0.3, clickmode="event", dragmode=False,
     )
-    ev1 = st.plotly_chart(fig1, use_container_width=True, on_select="rerun", config=_CHART_CFG)
+    ev1 = st.plotly_chart(fig1, width="stretch", on_select="rerun", config=_CHART_CFG)
     if ev1 and ev1.selection and ev1.selection.points:
         clicked = str(ev1.selection.points[0].get("x", ""))
         if clicked:
@@ -405,7 +405,7 @@ with c2:
             dragmode=False,
         )
         fig2.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-        st.plotly_chart(fig2, use_container_width=True, config=_CHART_CFG)
+        st.plotly_chart(fig2, width="stretch", config=_CHART_CFG)
 
 # ─────────────────────────────────────────────────────────
 # CHARTS ROW 2
@@ -440,7 +440,7 @@ with c3:
         xaxis_title="", yaxis_title="Value (KD)",
         xaxis_tickangle=-35, dragmode=False,
     )
-    st.plotly_chart(fig3, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig3, width="stretch", config=_CHART_CFG)
 
 # Chart 4 — Aging distribution pie (clickable)
 with c4:
@@ -466,7 +466,7 @@ with c4:
         margin=dict(l=20, r=20, t=20, b=10), height=360,
         clickmode="event", dragmode=False,
     )
-    ev4 = st.plotly_chart(fig4, use_container_width=True, on_select="rerun", config=_CHART_CFG)
+    ev4 = st.plotly_chart(fig4, width="stretch", on_select="rerun", config=_CHART_CFG)
     if ev4 and ev4.selection and ev4.selection.points:
         clicked = str(ev4.selection.points[0].get("label", ""))
         if clicked:
@@ -486,7 +486,7 @@ if st.session_state.chart_bucket:
         f'<div class="filter-bar">📊 Chart filter: <span class="filter-pill">{st.session_state.chart_bucket} days</span> &nbsp; (click same bucket again or Clear to reset)</div>',
         unsafe_allow_html=True,
     )
-    if ccol.button("✕ Clear", use_container_width=True):
+    if ccol.button("✕ Clear", width="stretch"):
         st.session_state.chart_bucket = None
         st.rerun()
     df_filtered = df[df["Aging Bucket"].astype(str) == st.session_state.chart_bucket]
@@ -512,7 +512,7 @@ def color_bucket_cell(val):
 fmt = {c: "{:,.0f}" for c in vendor_summary.columns if c != "Vendor"}
 st.dataframe(
     vendor_summary.style.format(fmt).map(color_bucket_cell, subset=[c for c in vendor_summary.columns if c not in ("Vendor", "Total Value")]),
-    use_container_width=True, height=380,
+    width="stretch", height=380,
 )
 
 # ─────────────────────────────────────────────────────────
@@ -534,7 +534,7 @@ display_cols = ["Item No.", "Vendor", "Brand", "Category",
 
 drill_display = drill_df[[c for c in display_cols if c in drill_df.columns]].sort_values(["Days"], ascending=False).copy()
 drill_display["Posting Date"] = drill_display["Posting Date"].dt.strftime("%Y-%m-%d")
-st.dataframe(drill_display, use_container_width=True, height=400)
+st.dataframe(drill_display, width="stretch", height=400)
 
 # ─────────────────────────────────────────────────────────
 # FOOTER
