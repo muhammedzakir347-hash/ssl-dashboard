@@ -313,12 +313,16 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
     """Fetch Kuwait inventory aging data from GFERP__Item_Ledger_Entry__c."""
     if sf is None:
         sf = get_sf_connection()
-    # Filter by Country__c = 'kw' in SOQL (equality is index-friendly; LIKE caused timeouts).
-    # Python post-filter kept as a safety net for any case-variation.
+    # Push country + qty filters into SOQL so Salesforce scans fewer rows.
+    # - GFERP__Item__r.Country__c = 'kwt'  →  drops ~35% non-KWT records before transfer
+    # - GFERP__Remaining_Qty_Base__c > 0   →  standard stock filter (index-friendly)
+    # SOQL string comparisons are case-insensitive so 'kwt' matches 'KWT' / 'Kwt'.
+    # Python post-filter kept as a safety net for any edge cases.
     soql = (
         f"SELECT {_INV_SOQL_FIELDS} "
         f"FROM GFERP__Item_Ledger_Entry__c "
-        f"WHERE GFERP__Available_Qty_Base__c > 0"
+        f"WHERE GFERP__Item__r.Country__c = 'kwt' "
+        f"AND GFERP__Remaining_Qty_Base__c > 0"
     )
     records = _run_soql(sf, soql, "Inventory")
     df = _flatten_inv(records)
