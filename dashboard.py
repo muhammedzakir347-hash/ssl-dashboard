@@ -236,8 +236,9 @@ if not _all_months:
     st.error("No data found. Run `python main.py` to populate the database.")
     st.stop()
 
-_min_date    = pd.to_datetime(_all_months[0] + "-01").date()
-_max_date    = (pd.to_datetime(_all_months[-1] + "-01") + pd.offsets.MonthEnd(0)).date()
+import datetime as _dt
+_min_date     = pd.to_datetime(_all_months[0] + "-01").date()
+_max_date     = _dt.date.today()   # allow picking up to today
 _default_from = max(
     _min_date,
     (pd.Timestamp(_max_date) - pd.DateOffset(months=5)).replace(day=1).date(),
@@ -256,6 +257,7 @@ with st.sidebar:
     with _sc2:
         date_to = st.date_input("To", value=_max_date,
                                 min_value=_min_date, max_value=_max_date)
+    st.caption("📅 Data is monthly — partial-month selections show the full month")
     st.markdown("---")
 
 # Load only the selected date range (cached per range + BQ timestamp)
@@ -294,10 +296,13 @@ with st.sidebar:
 # ──────────────────────────────────────────────────────────────────────
 df = df_full.copy()
 
-# Date range
+# Date range — use overlap logic so mid-month picks work correctly.
+# A monthly row is included when its month overlaps [date_from, date_to]:
+#   month_start <= date_to  AND  month_end >= date_from
+_df_month_end = (df["Month_dt"] + pd.offsets.MonthEnd(0)).dt.date
 df = df[
-    (df["Month_dt"].dt.date >= date_from) &
-    (df["Month_dt"].dt.date <= date_to)
+    (df["Month_dt"].dt.date <= date_to) &
+    (_df_month_end          >= date_from)
 ]
 if selected_vendors: df = df[df["Vendor"].isin(selected_vendors)]
 if selected_brands:  df = df[df["Brand"].isin(selected_brands)]
