@@ -159,7 +159,9 @@ _WH_SOQL_FIELDS = (
 
 # ── Sales Invoice Lines ──────────────────────────────────────────────────
 # Object: GFERP__Sales_Invoice_Line__c  (posted sales = actual revenue)
-# If your org uses a different object, update the FROM clause in _fetch_sales().
+# Fields confirmed via find_sales_object.py describe on 2026-09-13.
+# GFERP__Posting_Date__c is a DATE field — no T00:00:00Z in filter.
+# GFERP__Quantity__c > 0 excludes credit memos / returns.
 _SALES_SOQL_FIELDS = (
     "GFERP__Item__r.Name, "
     "GFERP__Item__r.Category__c, "
@@ -387,17 +389,15 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
 def _fetch_sales(sf: Salesforce) -> pd.DataFrame:
     """Fetch posted sales invoice lines from GFERP__Sales_Invoice_Line__c.
 
-    If this query fails with 'object not found', check the object API name
-    in Salesforce Setup > Object Manager and update the FROM clause below.
-    Common alternates: GFERP__Sales_Order_Line__c (open orders).
+    GFERP__Posting_Date__c is a DATE field -- no T00:00:00Z suffix in the filter.
+    GFERP__Quantity__c > 0 excludes credit memos and return lines.
     """
     start, end = _date_range()
     soql = (
         f"SELECT {_SALES_SOQL_FIELDS} "
         f"FROM GFERP__Sales_Invoice_Line__c "
-        f"WHERE GFERP__Item__r.Country__c = 'kwt' "
-        f"AND GFERP__Posting_Date__c >= {start}T00:00:00Z "
-        f"AND GFERP__Posting_Date__c <= {end}T23:59:59Z "
+        f"WHERE GFERP__Posting_Date__c >= {start} "
+        f"AND GFERP__Posting_Date__c <= {end} "
         f"AND GFERP__Quantity__c > 0"
     )
     records = _run_soql(sf, soql, "Sales")
