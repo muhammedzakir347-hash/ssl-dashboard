@@ -157,6 +157,19 @@ _WH_SOQL_FIELDS = (
     "GFERP__Item__r.Category__c"
 )
 
+# ── Sales Invoice Lines ──────────────────────────────────────────────────
+# Object: GFERP__Sales_Invoice_Line__c  (posted sales = actual revenue)
+# If your org uses a different object, update the FROM clause in _fetch_sales().
+_SALES_SOQL_FIELDS = (
+    "GFERP__Item__r.Name, "
+    "GFERP__Item__r.Category__c, "
+    "GFERP__Item__r.Drops_Brand__r.Name, "
+    "GFERP__Item__r.GFERP__Vendor__r.Name, "
+    "GFERP__Posting_Date__c, "
+    "GFERP__Quantity__c, "
+    "GFERP__Line_Amount__c"
+)
+
 
 def _flatten_po(records: list[dict]) -> pd.DataFrame:
     """Flatten SOQL records for GFERP__Purchase_Line__c into the report column labels."""
@@ -180,6 +193,25 @@ def _flatten_po(records: list[dict]) -> pd.DataFrame:
             "Drops Brand: Name":              brand_rel.get("Name"),
             "Expected Receipt Date":          r.get("GFERP__Expected_Receipt_Date__c"),
             "Supplier Code":                  item.get("Supplier_Code__c"),
+        })
+    return pd.DataFrame(rows)
+
+
+def _flatten_sales(records: list[dict]) -> pd.DataFrame:
+    """Flatten GFERP__Sales_Invoice_Line__c records into a flat DataFrame."""
+    rows = []
+    for r in records:
+        item       = r.get("GFERP__Item__r") or {}
+        brand_rel  = item.get("Drops_Brand__r") or {}
+        vendor_rel = item.get("GFERP__Vendor__r") or {}
+        rows.append({
+            "Item No.":    item.get("Name"),
+            "Category":   item.get("Category__c"),
+            "Brand":      brand_rel.get("Name"),
+            "Vendor":     vendor_rel.get("Name"),
+            "Posting Date": r.get("GFERP__Posting_Date__c"),
+            "Sales Qty":   r.get("GFERP__Quantity__c"),
+            "Sales Value": r.get("GFERP__Line_Amount__c"),
         })
     return pd.DataFrame(rows)
 
@@ -352,14 +384,51 @@ def fetch_inventory(sf: Salesforce | None = None) -> pd.DataFrame:
 # -------------------------------------------------------------------------
 # PUBLIC ENTRY POINTS
 # -------------------------------------------------------------------------
+def _fetch_sales(sf: Salesforce) -> pd.DataFrame:
+    """Fetch posted sales invoice lines from GFERP__Sales_Invoice_Line__c.
+
+    If this query fails with 'object not found', check the object API name
+    in Salesforce Setup > Object Manager and update the FROM clause below.
+    Common alternates: GFERP__Sales_Order_Line__c (open orders).
+    """
+    start, end = _date_range()
+    soql = (
+        f"SELECT {_SALES_SOQL_FIELDS} "
+        f"FROM GFERP__Sales_Invoice_Line__c "
+        f"WHERE GFERP__Item__r.Country__c = 'kwt' "
+        f"AND GFERP__Posting_Date__c >= {start}T00:00:00Z "
+        f"AND GFERP__Posting_Date__c <= {end}T23:59:59Z "
+        f"AND GFERP__Quantity__c > 0"
+    )
+    records = _run_soql(sf, soql, "Sales")
+    df = _flatten_sales(records)
+    logger.info("Sales DataFrame: %s rows x %s cols", len(df), len(df.columns))
+    return df
+
+
+def fetch_sales(sf: Salesforce | None = None) -> pd.DataFrame:
+    """Fetch sales invoice lines into memory (no CSV written)."""
+    if sf is None:
+        sf = get_sf_connection()
+    return _fetch_sales(sf)
+
+
 def _fetch_both(sf: Salesforce) -> dict[str, pd.DataFrame]:
-    """Authenticate once, pull both reports, return as DataFrames."""
+    """Authenticate once, pull PO, WH, and Sales, return as DataFrames."""
     start, end = _date_range()
     logger.info("Date range: %s to %s (%s months)", start, end, config.SF_FETCH_MONTHS)
-    return {
+    result = {
         "po":        _fetch_po(sf),
         "warehouse": _fetch_wh(sf),
     }
+    try:
+        result["sales"] = _fetch_sales(sf)
+    except Exception as exc:
+        logger.warning(
+            "Sales fetch failed -- skipping (check GFERP__Sales_Invoice_Line__c "
+            "object name in your org): %s", exc
+        )
+    return result
 
 
 def fetch_dataframes() -> dict[str, pd.DataFrame]:
@@ -373,8 +442,7 @@ def fetch_dataframes() -> dict[str, pd.DataFrame]:
 def download_attachments() -> dict[str, Path]:
     """
     Fetch and save to downloads/ as CSV files.
-    Returns {'po': Path, 'warehouse': Path} -- same contract as
-    gmail_fetcher.download_today_attachments().
+    Returns {'po': Path, 'warehouse': Path, 'sales': Path (if available)}.
     """
     sf     = get_sf_connection()
     frames = _fetch_both(sf)

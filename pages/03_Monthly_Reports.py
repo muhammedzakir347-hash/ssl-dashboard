@@ -281,9 +281,10 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -----------------------------------------------------------------------
 # TABS
 # -----------------------------------------------------------------------
-tab_vendor, tab_cat, tab_sku, tab_lines, tab_dl = st.tabs([
+tab_vendor, tab_cat, tab_sales, tab_sku, tab_lines, tab_dl = st.tabs([
     "By Vendor",
     "By Category",
+    "Sales Performance",
     "Undelivered SKUs",
     "Item-Level Lines",
     "Download Excel",
@@ -375,7 +376,212 @@ with tab_cat:
                  use_container_width=True)
 
 
-# -- TAB 3: Undelivered SKUs --------------------------------------------
+# -- TAB 3: Sales Performance -------------------------------------------
+with tab_sales:
+    # Load sales data from BQ
+    @st.cache_data(ttl=1800, show_spinner="Loading sales data from BigQuery...")
+    def load_sales(month: str) -> pd.DataFrame:
+        try:
+            return bq.read_table_range(bq.TABLE_SALES, month, month)
+        except Exception:
+            return pd.DataFrame()
+
+    sales_df = load_sales(sel_month)
+
+    if sales_df.empty:
+        st.info(
+            "No sales data found in BigQuery for this month.\n\n"
+            "Sales are pulled nightly from Salesforce (`GFERP__Sales_Invoice_Line__c`) "
+            "and stored in the `sales_data` BQ table. "
+            "Run `python main.py` locally to populate it for the first time."
+        )
+    else:
+        # Normalise
+        for col in ("Sales_Qty", "Sales_Value"):
+            if col in sales_df.columns:
+                sales_df[col] = pd.to_numeric(sales_df[col], errors="coerce").fillna(0)
+
+        sales_total_qty   = sales_df["Sales_Qty"].sum()
+        sales_total_value = sales_df["Sales_Value"].sum()
+
+        # Join sales onto procurement data (ssl_merged)
+        merge_keys = ["Item_No", "Vendor", "Brand", "Category"]
+        sales_join = sales_df.rename(columns={"Item No.": "Item_No"}) if "Item No." in sales_df.columns else sales_df
+        joined = df.merge(
+            sales_join[merge_keys + ["Sales_Qty", "Sales_Value"]],
+            on=merge_keys, how="left",
+        )
+        joined["Sales_Qty"]   = joined["Sales_Qty"].fillna(0)
+        joined["Sales_Value"] = joined["Sales_Value"].fillna(0)
+        joined["Sell_Through"] = np.where(
+            joined["Rec_Qty"] > 0,
+            (joined["Sales_Qty"] / joined["Rec_Qty"] * 100).clip(0, 200),
+            np.nan,
+        ).round(1)
+
+        # KPI row
+        sell_through_overall = (
+            round(sales_total_qty / joined["Rec_Qty"].sum() * 100, 1)
+            if joined["Rec_Qty"].sum() > 0 else 0.0
+        )
+        oos_count = int(((joined["Rec_Qty"] > 0) & (joined["Sales_Qty"] == 0)).sum())
+
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("Sales Value",       f"{sales_total_value/1_000:,.1f}K KD")
+        s2.metric("Sales Qty",         f"{sales_total_qty:,.0f}")
+        s3.metric("Sell-through Rate", f"{sell_through_overall:.1f}%")
+        s4.metric("Received, Not Sold", f"{oos_count:,} SKUs")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+
+        # -- By Vendor: Received vs Sold
+        st.markdown("#### By Vendor — Received vs Sold")
+        vendor_sales = (
+            joined.groupby("Vendor", observed=True, dropna=False)
+            .agg(
+                PO_Value=("PO_Value", "sum"),
+                Rec_Value=("Rec_Value", "sum"),
+                Rec_Qty=("Rec_Qty", "sum"),
+                Sales_Value=("Sales_Value", "sum"),
+                Sales_Qty=("Sales_Qty", "sum"),
+            )
+            .reset_index()
+        )
+        vendor_sales["SSL %"] = np.where(
+            vendor_sales["PO_Value"] > 0,
+            (vendor_sales["Rec_Value"] / vendor_sales["PO_Value"] * 100).clip(0, 100), 0
+        ).round(1)
+        vendor_sales["Sell-Through %"] = np.where(
+            vendor_sales["Rec_Qty"] > 0,
+            (vendor_sales["Sales_Qty"] / vendor_sales["Rec_Qty"] * 100).clip(0, 200), np.nan
+        ).round(1)
+        vendor_sales = vendor_sales.sort_values("Sales_Value", ascending=False).reset_index(drop=True)
+        vendor_sales = vendor_sales.rename(columns={
+            "PO_Value":    "PO Value KD",
+            "Rec_Value":   "Received KD",
+            "Rec_Qty":     "Received Qty",
+            "Sales_Value": "Sales Value KD",
+            "Sales_Qty":   "Sales Qty",
+        })
+
+        # Chart: top 15 by sales
+        top_vs = vendor_sales.head(15).sort_values("Sales Value KD", ascending=True)
+        fig_vs = go.Figure()
+        fig_vs.add_trace(go.Bar(
+            name="Received KD", y=top_vs["Vendor"], x=top_vs["Received KD"],
+            orientation="h", marker_color="#CBD5E1", opacity=0.85,
+        ))
+        fig_vs.add_trace(go.Bar(
+            name="Sales Value KD", y=top_vs["Vendor"], x=top_vs["Sales Value KD"],
+            orientation="h", marker_color="#10B981",
+        ))
+        fig_vs.update_layout(
+            barmode="overlay", height=420,
+            margin=dict(l=10, r=10, t=40, b=10),
+            title=f"Top 15 Vendors: Received vs Sold -- {sel_label}",
+            legend=dict(orientation="h", y=1.06),
+            xaxis_title="Value (KD)",
+        )
+        st.plotly_chart(fig_vs, use_container_width=True)
+
+        def _st_style(val):
+            if pd.isna(val): return ""
+            if val >= 80:  return "background-color:#ECFDF5; color:#065F46"
+            if val >= 40:  return "background-color:#FFFBEB; color:#92400E"
+            return "background-color:#FEF2F2; color:#991B1B"
+
+        styled_vs = vendor_sales.style.format({
+            "PO Value KD":    "{:,.0f}",
+            "Received KD":    "{:,.0f}",
+            "Received Qty":   "{:,.0f}",
+            "Sales Value KD": "{:,.0f}",
+            "Sales Qty":      "{:,.0f}",
+            "SSL %":          "{:.1f}%",
+            "Sell-Through %": lambda v: f"{v:.1f}%" if pd.notna(v) else "—",
+        })
+        try:
+            styled_vs = styled_vs.map(_st_style, subset=["Sell-Through %"])
+        except AttributeError:
+            styled_vs = styled_vs.applymap(_st_style, subset=["Sell-Through %"])
+        st.dataframe(styled_vs, use_container_width=True, height=400)
+
+        # -- By Category: Received vs Sold
+        st.markdown("#### By Category — Received vs Sold")
+        cat_sales = (
+            joined.groupby("Category", observed=True, dropna=False)
+            .agg(
+                Rec_Value=("Rec_Value", "sum"),
+                Rec_Qty=("Rec_Qty", "sum"),
+                Sales_Value=("Sales_Value", "sum"),
+                Sales_Qty=("Sales_Qty", "sum"),
+            )
+            .reset_index()
+        )
+        cat_sales["Sell-Through %"] = np.where(
+            cat_sales["Rec_Qty"] > 0,
+            (cat_sales["Sales_Qty"] / cat_sales["Rec_Qty"] * 100).clip(0, 200), np.nan
+        ).round(1)
+        cat_sales = cat_sales.sort_values("Sales_Value", ascending=False).reset_index(drop=True)
+        cat_sales = cat_sales.rename(columns={
+            "Rec_Value":   "Received KD",
+            "Rec_Qty":     "Received Qty",
+            "Sales_Value": "Sales Value KD",
+            "Sales_Qty":   "Sales Qty",
+        })
+
+        fig_cs = go.Figure()
+        cs_sorted = cat_sales.sort_values("Sales Value KD", ascending=True)
+        fig_cs.add_trace(go.Bar(
+            name="Received KD", y=cs_sorted["Category"], x=cs_sorted["Received KD"],
+            orientation="h", marker_color="#CBD5E1", opacity=0.85,
+        ))
+        fig_cs.add_trace(go.Bar(
+            name="Sales Value KD", y=cs_sorted["Category"], x=cs_sorted["Sales Value KD"],
+            orientation="h", marker_color="#10B981",
+        ))
+        fig_cs.update_layout(
+            barmode="overlay",
+            height=max(380, len(cat_sales) * 36),
+            margin=dict(l=10, r=10, t=40, b=10),
+            title=f"By Category: Received vs Sold -- {sel_label}",
+            legend=dict(orientation="h", y=1.06),
+            xaxis_title="Value (KD)",
+        )
+        st.plotly_chart(fig_cs, use_container_width=True)
+
+        # -- Received but Not Sold (potential OOS / slow movers)
+        st.markdown("#### Received but Not Sold (potential out-of-stock or slow movers)")
+        not_sold = (
+            joined[(joined["Rec_Qty"] > 0) & (joined["Sales_Qty"] == 0)]
+            [["Item_No", "Vendor", "Brand", "Category", "Rec_Qty", "Rec_Value"]]
+            .sort_values("Rec_Value", ascending=False)
+            .reset_index(drop=True)
+        )
+        not_sold.insert(0, "No.", not_sold.index + 1)
+        not_sold = not_sold.rename(columns={
+            "Item_No":   "SKU",
+            "Rec_Qty":   "Received Qty",
+            "Rec_Value": "Received Value KD",
+        })
+        st.markdown(
+            f"**{len(not_sold):,} SKUs** were received in {sel_label} but had zero sales — "
+            f"total received value **{not_sold['Received Value KD'].sum():,.0f} KD**."
+        )
+        srch_s = st.text_input("Search SKU / Vendor / Brand / Category", key="sales_search")
+        disp_s = not_sold
+        if srch_s:
+            mask_s = pd.Series(False, index=disp_s.index)
+            for col in ["SKU", "Vendor", "Brand", "Category"]:
+                if col in disp_s.columns:
+                    mask_s |= disp_s[col].astype(str).str.contains(srch_s, case=False, na=False)
+            disp_s = disp_s[mask_s]
+        st.dataframe(
+            disp_s.style.format({"Received Qty": "{:,.0f}", "Received Value KD": "{:,.0f}"}),
+            use_container_width=True, height=400,
+        )
+
+
+# -- TAB 4: Undelivered SKUs --------------------------------------------
 with tab_sku:
     st.markdown(
         f"**{len(sku_df):,} SKUs** with zero delivery in {sel_label} -- "

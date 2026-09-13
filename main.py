@@ -87,7 +87,7 @@ def main() -> int:
         po_path, wh_path = get_input_files(args)
         sheets = data_processor.run_pipeline(po_path, wh_path)
 
-        # Fetch and add inventory aging sheet
+        # Fetch and add inventory aging + sales sheets
         if config.SF_USERNAME and config.SF_INV_REPORT_ID:
             logger.info("Fetching inventory aging data...")
             import salesforce_fetcher
@@ -97,6 +97,19 @@ def main() -> int:
             inv_raw.to_csv(inv_path, index=False, encoding="utf-8")
             logger.info("Inventory saved -> %s (%s rows)", inv_path, len(inv_raw))
             sheets["Inventory_Aging"] = data_processor.process_inventory_aging(inv_raw)
+
+            # Sales data (GFERP__Sales_Invoice_Line__c) -- optional, skipped on error
+            try:
+                logger.info("Fetching sales invoice data...")
+                sales_raw = salesforce_fetcher.fetch_sales(sf)
+                if not sales_raw.empty:
+                    sales_path = config.DOWNLOADS_DIR / "sales_latest.csv"
+                    sales_raw.to_csv(sales_path, index=False, encoding="utf-8")
+                    logger.info("Sales saved -> %s (%s rows)", sales_path, len(sales_raw))
+                    sheets["Sales_Data"] = sales_raw
+            except Exception:
+                import traceback as _tb
+                logger.warning("Sales fetch skipped:\n%s", _tb.format_exc())
 
         saved_paths = excel_builder.save_with_history(sheets)
 
@@ -118,6 +131,23 @@ def main() -> int:
             if "Inventory_Aging" in sheets:
                 logger.info("Pushing inventory aging to BigQuery...")
                 bigquery_client.push_dataframe(sheets["Inventory_Aging"], bigquery_client.TABLE_INV)
+            if "Sales_Data" in sheets:
+                logger.info("Pushing sales data to BigQuery...")
+                # Aggregate to month + item + vendor + brand + category before storing
+                import pandas as _pd
+                s = sheets["Sales_Data"].copy()
+                s["Posting Date"] = _pd.to_datetime(s["Posting Date"], errors="coerce")
+                s["Month"] = s["Posting Date"].dt.to_period("M").astype(str)
+                s["Sales Qty"]   = _pd.to_numeric(s["Sales Qty"],   errors="coerce").fillna(0)
+                s["Sales Value"] = _pd.to_numeric(s["Sales Value"], errors="coerce").fillna(0)
+                sales_agg = (
+                    s.groupby(["Month", "Item No.", "Vendor", "Brand", "Category"],
+                               dropna=False)
+                    .agg(Sales_Qty=("Sales Qty", "sum"), Sales_Value=("Sales Value", "sum"))
+                    .reset_index()
+                )
+                bigquery_client.upsert_by_month(sales_agg, bigquery_client.TABLE_SALES,
+                                                month_col="Month")
             logger.info("BigQuery push complete.")
         except Exception:
             logger.warning("BigQuery push failed (dashboard will use local CSV):\n%s", traceback.format_exc())
