@@ -17,6 +17,9 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
+# Allow large styled dataframes (item-level lines can be 37k+ rows)
+pd.set_option("styler.render.max_elements", 5_000_000)
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 try:
