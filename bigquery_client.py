@@ -30,6 +30,7 @@ DATASET     = "ssl_dashboard"
 TABLE_SSL   = "ssl_merged"
 TABLE_INV   = "inventory_aging"
 TABLE_SALES = "sales_data"
+TABLE_GP    = "gp_data"
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 

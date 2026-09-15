@@ -23,14 +23,7 @@ import data_processor
 import salesforce_fetcher
 
 # ─────────────────────────────────────────────────────────
-# PAGE CONFIG  (must be first Streamlit command)
-# ─────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Inventory Aging | Drops",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# page config handled by app.py
 
 try:
     from dotenv import load_dotenv

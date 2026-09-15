@@ -34,16 +34,7 @@ for _key in ("SF_USERNAME", "SF_PASSWORD", "SF_SECURITY_TOKEN", "SF_DOMAIN"):
 import config
 import data_processor
 
-# ──────────────────────────────────────────────────────────────────────
-# PAGE CONFIG
-# ──────────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="SSL Dashboard | Drops",
-    page_icon="📦",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
-
+# set_page_config is now handled by app.py (st.navigation entry point)
 # ──────────────────────────────────────────────────────────────────────
 # THEME / CSS
 # ──────────────────────────────────────────────────────────────────────

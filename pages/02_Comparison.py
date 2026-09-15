@@ -44,14 +44,7 @@ import bigquery_client as bq
 import config
 
 # ──────────────────────────────────────────────────────────────────────
-# PAGE CONFIG
-# ──────────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title="Comparison | SSL Dashboard",
-    page_icon="📊",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# page config handled by app.py
 
 # ──────────────────────────────────────────────────────────────────────
 # THEME / CSS (mirrors main dashboard, same adaptive light/dark system)

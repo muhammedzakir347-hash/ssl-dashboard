@@ -37,14 +37,7 @@ for _key in ("SF_USERNAME", "SF_PASSWORD", "SF_SECURITY_TOKEN"):
 import bigquery_client as bq
 
 # -----------------------------------------------------------------------
-# PAGE CONFIG
-# -----------------------------------------------------------------------
-st.set_page_config(
-    page_title="Monthly Reports | Drops",
-    page_icon="\U0001f4cb",
-    layout="wide",
-    initial_sidebar_state="expanded",
-)
+# page config handled by app.py
 
 # -----------------------------------------------------------------------
 # THEME / CSS  (same visual system as main dashboard)
@@ -284,12 +277,13 @@ st.markdown("<br>", unsafe_allow_html=True)
 # -----------------------------------------------------------------------
 # TABS
 # -----------------------------------------------------------------------
-tab_vendor, tab_cat, tab_sales, tab_sku, tab_lines, tab_dl = st.tabs([
+tab_vendor, tab_cat, tab_sales, tab_sku, tab_lines, tab_gp, tab_dl = st.tabs([
     "By Vendor",
     "By Category",
     "Sales Performance",
     "Undelivered SKUs",
     "Item-Level Lines",
+    "🔒 GP & Profitability",
     "Download Excel",
 ])
 
@@ -690,7 +684,198 @@ with tab_lines:
         )
 
 
-# -- TAB 5: Download Excel ----------------------------------------------
+# -- TAB 6: GP & Profitability (password protected) --------------------
+with tab_gp:
+    # ── Password gate ──────────────────────────────────────────────────
+    _GP_PWD = None
+    try:
+        _GP_PWD = st.secrets.get("GP_PASSWORD") or os.getenv("GP_PASSWORD")
+    except Exception:
+        _GP_PWD = os.getenv("GP_PASSWORD")
+
+    if not _GP_PWD:
+        st.warning("GP_PASSWORD not configured in Streamlit secrets. Contact admin.")
+        st.stop()
+
+    if "gp_unlocked" not in st.session_state:
+        st.session_state["gp_unlocked"] = False
+
+    if not st.session_state["gp_unlocked"]:
+        st.markdown("### 🔒 GP & Profitability")
+        st.markdown("This section contains confidential margin data. Enter the password to continue.")
+        col_pw, _ = st.columns([2, 5])
+        with col_pw:
+            entered = st.text_input("Password", type="password", key="gp_pwd_input",
+                                    placeholder="Enter GP password")
+            if st.button("Unlock", key="gp_unlock_btn"):
+                if entered == _GP_PWD:
+                    st.session_state["gp_unlocked"] = True
+                    st.rerun()
+                else:
+                    st.error("Incorrect password.")
+        st.stop()
+
+    # ── Load GP data — local CSV first, BigQuery as fallback ───────────
+    _GP_DIR = Path(__file__).parent.parent / "downloads" / "gp"
+
+    @st.cache_data(ttl=1800, show_spinner="Loading GP data...")
+    def _load_gp(month: str) -> tuple[pd.DataFrame, str]:
+        """Returns (df, source) where source is 'local' or 'bigquery'."""
+        # 1. Try local CSV
+        local_csv = _GP_DIR / f"{month}_gp.csv"
+        if local_csv.exists():
+            df = pd.read_csv(local_csv, encoding="utf-8")
+            return df, "local"
+        # 2. Fall back to BigQuery
+        try:
+            df = bq.read_table_range(bq.TABLE_GP, month, month)
+            if not df.empty:
+                return df, "bigquery"
+        except Exception:
+            pass
+        return pd.DataFrame(), "none"
+
+    gp_df, gp_source = _load_gp(sel_month)
+
+    if gp_df.empty:
+        st.info(
+            f"No GP data found for {sel_label}.\n\n"
+            "Local CSV not found and BigQuery table is empty. "
+            "Run `python fetch_gp_report.py` to fetch data."
+        )
+    else:
+        # Normalise column names (BQ safe-names use underscores)
+        gp_df = gp_df.rename(columns={
+            "Sales_Value__KWD_": "Sales Value (KWD)",
+            "COGS__KWD_":        "COGS (KWD)",
+            "GP__KWD_":          "GP (KWD)",
+            "GP_":               "GP%",
+            "Sales_Qty":         "Sales Qty",
+            "Item_No_":          "Item No.",
+            "Item_Name":         "Item Name",
+            "Posting_Date":      "Posting Date",
+        })
+        for col in ["Sales Value (KWD)", "COGS (KWD)", "GP (KWD)", "GP%", "Sales Qty"]:
+            if col in gp_df.columns:
+                gp_df[col] = pd.to_numeric(gp_df[col], errors="coerce").fillna(0)
+
+        total_sales = gp_df["Sales Value (KWD)"].sum()
+        total_cogs  = gp_df["COGS (KWD)"].sum()
+        total_gp    = gp_df["GP (KWD)"].sum()
+        overall_gp_pct = total_gp / total_sales * 100 if total_sales else 0
+
+        # Source badge
+        if gp_source == "local":
+            st.caption("📂 Data source: local CSV  ·  push to BigQuery with `python push_gp_to_bq.py`")
+        else:
+            st.caption("☁️ Data source: BigQuery")
+
+        # Header metrics
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Sales Value",  f"{total_sales:,.0f} KWD")
+        m2.metric("COGS",         f"{total_cogs:,.0f} KWD")
+        m3.metric("Gross Profit", f"{total_gp:,.0f} KWD")
+        gp_color = "normal" if overall_gp_pct >= 15 else "inverse"
+        m4.metric("GP%", f"{overall_gp_pct:.1f}%")
+
+        st.markdown("---")
+        sub1, sub2 = st.tabs(["By Brand", "By Category"])
+
+        # -- By Brand -------------------------------------------------------
+        with sub1:
+            brand_gp = (
+                gp_df.groupby("Brand")[["Sales Value (KWD)", "COGS (KWD)", "GP (KWD)", "Sales Qty"]]
+                .sum().reset_index()
+                .sort_values("GP (KWD)", ascending=False)
+            )
+            brand_gp["GP%"] = (
+                brand_gp["GP (KWD)"] / brand_gp["Sales Value (KWD)"] * 100
+            ).where(brand_gp["Sales Value (KWD)"] > 0, 0).round(2)
+            brand_gp.insert(0, "Rank", range(1, len(brand_gp) + 1))
+
+            c1, c2 = st.columns(2)
+            with c1:
+                top15 = brand_gp.head(15).sort_values("GP (KWD)")
+                fig = px.bar(
+                    top15, x="GP (KWD)", y="Brand", orientation="h",
+                    color="GP%",
+                    color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
+                    range_color=[0, 30],
+                    title=f"Top 15 Brands by GP — {sel_label}",
+                )
+                fig.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10),
+                                  coloraxis_showscale=True)
+                st.plotly_chart(fig, use_container_width=True)
+
+            with c2:
+                bot10 = brand_gp[brand_gp["Sales Value (KWD)"] > 100].nsmallest(10, "GP%")
+                fig2 = px.bar(
+                    bot10.sort_values("GP%"), x="GP%", y="Brand", orientation="h",
+                    color="GP%",
+                    color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
+                    range_color=[-10, 20],
+                    title=f"Lowest GP% Brands — {sel_label}",
+                )
+                fig2.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10),
+                                   coloraxis_showscale=False)
+                st.plotly_chart(fig2, use_container_width=True)
+
+            def _gp_style(val):
+                if val < 0:   return "background-color:#FEF2F2; color:#991B1B"
+                if val < 5:   return "background-color:#FFF7ED; color:#C2410C"
+                if val < 15:  return "background-color:#FFFBEB; color:#92400E"
+                return "background-color:#ECFDF5; color:#065F46"
+
+            styled_brand = brand_gp.style.format({
+                "Sales Value (KWD)": "{:,.0f}",
+                "COGS (KWD)":        "{:,.0f}",
+                "GP (KWD)":          "{:,.0f}",
+                "Sales Qty":         "{:,.0f}",
+                "GP%":               "{:.1f}%",
+            })
+            styled_brand = _apply_style(styled_brand, _gp_style, ["GP%"])
+            st.dataframe(styled_brand, use_container_width=True, height=400)
+
+        # -- By Category ----------------------------------------------------
+        with sub2:
+            cat_gp = (
+                gp_df.groupby("Category")[["Sales Value (KWD)", "COGS (KWD)", "GP (KWD)", "Sales Qty"]]
+                .sum().reset_index()
+                .sort_values("GP (KWD)", ascending=False)
+            )
+            cat_gp["GP%"] = (
+                cat_gp["GP (KWD)"] / cat_gp["Sales Value (KWD)"] * 100
+            ).where(cat_gp["Sales Value (KWD)"] > 0, 0).round(2)
+
+            fig3 = px.bar(
+                cat_gp.sort_values("GP%"),
+                x="GP%", y="Category", orientation="h",
+                color="GP%",
+                color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
+                range_color=[0, 30],
+                title=f"GP% by Category — {sel_label}",
+            )
+            fig3.update_layout(height=500, margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(fig3, use_container_width=True)
+
+            styled_cat = cat_gp.style.format({
+                "Sales Value (KWD)": "{:,.0f}",
+                "COGS (KWD)":        "{:,.0f}",
+                "GP (KWD)":          "{:,.0f}",
+                "Sales Qty":         "{:,.0f}",
+                "GP%":               "{:.1f}%",
+            })
+            styled_cat = _apply_style(styled_cat, _gp_style, ["GP%"])
+            st.dataframe(styled_cat, use_container_width=True, height=400)
+
+        # Lock button
+        st.markdown("---")
+        if st.button("🔒 Lock GP tab", key="gp_lock_btn"):
+            st.session_state["gp_unlocked"] = False
+            st.rerun()
+
+
+# -- TAB 7: Download Excel ----------------------------------------------
 with tab_dl:
     st.markdown(f"### Download {sel_label} Report")
 
