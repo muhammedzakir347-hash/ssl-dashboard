@@ -8,6 +8,8 @@ from pathlib import Path
 
 import streamlit as st
 
+st.set_page_config(layout="wide", page_title="SSL Dashboard", page_icon="📦")
+
 # Bootstrap: allow same-folder imports and load .env
 sys.path.insert(0, str(Path(__file__).parent))
 try:
