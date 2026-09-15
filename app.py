@@ -56,6 +56,12 @@ st.markdown("""
 [data-testid="stDataFrame"] { overflow-x: auto !important; }
 /* ---------- tabs don't clip content ---------- */
 [data-testid="stTabs"] { overflow: visible !important; }
+/* ---------- hide GP from sidebar nav ---------- */
+a[href="/gp"], a[href*="/gp"],
+[data-testid="stSidebarNavLink"][href$="/gp"],
+[data-testid="stSidebarNavLink"][href$="gp"] {
+    display: none !important;
+}
 /* ---------- responsive: stack st.columns on narrow screens ---------- */
 @media (max-width: 768px) {
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
