@@ -5,7 +5,6 @@ Protected by GP_PASSWORD env var / Streamlit secret.
 """
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pandas as pd
@@ -89,37 +88,6 @@ def _apply(styler, fn, cols):
         return styler.applymap(fn, subset=cols)
 
 
-# ==========================================================================
-# PASSWORD GATE
-# ==========================================================================
-_GP_PWD = None
-try:
-    _GP_PWD = st.secrets.get("GP_PASSWORD") or os.getenv("GP_PASSWORD")
-except Exception:
-    _GP_PWD = os.getenv("GP_PASSWORD")
-
-if not _GP_PWD:
-    st.error("GP_PASSWORD not configured. Add it to .env or Streamlit secrets.")
-    st.stop()
-
-if "gp_unlocked" not in st.session_state:
-    st.session_state["gp_unlocked"] = False
-
-if not st.session_state["gp_unlocked"]:
-    st.markdown("""
-    <style>section[data-testid="stSidebar"] { display: none; }</style>
-    """, unsafe_allow_html=True)
-    st.markdown("## GP & Profitability")
-    col_pw, _ = st.columns([2, 5])
-    with col_pw:
-        entered = st.text_input("Password", type="password", placeholder="Enter password")
-        if st.button("Unlock", use_container_width=True):
-            if entered == _GP_PWD:
-                st.session_state["gp_unlocked"] = True
-                st.rerun()
-            else:
-                st.error("Incorrect password.")
-    st.stop()
 
 
 # ==========================================================================

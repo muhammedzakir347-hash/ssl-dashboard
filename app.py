@@ -31,7 +31,7 @@ pg = st.navigation([
     st.Page("pages/01_Inventory_Aging.py", title="Inventory Aging", icon="📊"),
     st.Page("pages/02_Comparison.py",      title="Comparison",      icon="📈"),
     st.Page("pages/03_Monthly_Reports.py", title="Monthly Reports",  icon="📋"),
-    st.Page("pages/gp.py", title="GP Analysis", icon="🔒", url_path="gp"),
+    st.Page("pages/gp.py", title="GP Analysis", icon="📊", url_path="gp"),
 ])
 
 # ── Global CSS applied to every page ───────────────────────────────────────
@@ -54,13 +54,6 @@ st.markdown("""
 [data-testid="stDataFrame"] { overflow-x: auto !important; }
 /* ---------- tabs don't clip content ---------- */
 [data-testid="stTabs"] { overflow: visible !important; }
-/* ---------- hide GP link from nav ---------- */
-a[href="/gp"],
-a[href*="/gp"],
-[data-testid="stSidebarNavLink"][href$="/gp"],
-[data-testid="stSidebarNavLink"][href$="gp"] {
-    display: none !important;
-}
 /* ---------- responsive: stack st.columns on narrow screens ---------- */
 @media (max-width: 768px) {
     [data-testid="stHorizontalBlock"] { flex-wrap: wrap !important; }
