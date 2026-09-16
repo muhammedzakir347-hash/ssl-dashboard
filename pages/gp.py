@@ -114,6 +114,18 @@ def load_all_gp() -> pd.DataFrame:
     if df.empty:
         return df
 
+    # Normalise BigQuery snake_case column names → friendly spaced names
+    df = df.rename(columns={
+        "Posting_Date":      "Posting Date",
+        "Item_No":           "Item No.",
+        "Item_Name":         "Item Name",
+        "Sales_Qty":         "Sales Qty",
+        "Sales_Value__KWD":  "Sales Value (KWD)",
+        "COGS__KWD":         "COGS (KWD)",
+        "GP__KWD":           "GP (KWD)",
+        "GP":                "GP%",
+    })
+
     df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
     df["Month"] = df["Posting Date"].dt.to_period("M").astype(str)
     df["DOW"]   = df["Posting Date"].dt.day_name()
