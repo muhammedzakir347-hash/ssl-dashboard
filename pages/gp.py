@@ -397,8 +397,28 @@ with tab_item:
         )
         .reset_index()
     )
-    item_agg["GP%"]     = (item_agg["GP"] / item_agg["Sales"] * 100).where(item_agg["Sales"] > 0, 0).round(2)
-    item_agg["Avg/Day"] = (item_agg["Sales"] / item_agg["Sell_Days"]).round(0)
+    item_agg["GP%"]     = (item_agg["GP"] / item_agg["Sales"] * 100).where(item_agg["Sales"] > 0, 0).round(3)
+    item_agg["Avg/Day"] = (item_agg["Sales"] / item_agg["Sell_Days"]).round(3)
+
+    # --- coupon / promo detection ----------------------------------------
+    # Days where this item's GP (KWD) was negative = likely a discount/coupon applied
+    neg_gp_days = (
+        df[df["GP (KWD)"] < 0]
+        .groupby("Item No.")["Posting Date"].nunique()
+        .rename("Neg_GP_Days")
+    )
+    item_agg = item_agg.join(neg_gp_days, on="Item No.", how="left")
+    item_agg["Neg_GP_Days"] = item_agg["Neg_GP_Days"].fillna(0).astype(int)
+
+    # GP Risk flag
+    def _gp_risk(row):
+        if row["GP%"] < 0:
+            return "Pricing issue"
+        if row["Neg_GP_Days"] > 0:
+            return "Coupon/Promo"
+        return "Normal"
+    item_agg["GP Risk"] = item_agg.apply(_gp_risk, axis=1)
+    # ---------------------------------------------------------------------
 
     if min_sales > 0:
         item_agg = item_agg[item_agg["Sales"] >= min_sales]
@@ -411,33 +431,68 @@ with tab_item:
     with col_top:
         top_n = st.selectbox("Show", [50, 100, 250, 500, "All"], key="i_top")
     with col_flag:
-        show_negative = st.checkbox("Negative GP only", key="i_neg")
+        filter_risk = st.selectbox("GP Risk filter",
+                                   ["All", "Coupon/Promo", "Pricing issue", "Normal"],
+                                   key="i_risk")
 
     sort_map = {"GP (KWD)": "GP", "Sales (KWD)": "Sales", "GP%": "GP%",
                 "Qty": "Qty", "Selling Days": "Sell_Days"}
     view = item_agg.copy()
-    if show_negative:
-        view = view[view["GP%"] < 0]
+    if filter_risk != "All":
+        view = view[view["GP Risk"] == filter_risk]
     view = view.sort_values(sort_map[sort_by], ascending=False)
     if top_n != "All":
         view = view.head(int(top_n))
     view = view.reset_index(drop=True)
     view.insert(0, "Rank", range(1, len(view) + 1))
 
+    def _style_risk(val):
+        if val == "Pricing issue": return "background-color:#FEF2F2;color:#991B1B"
+        if val == "Coupon/Promo":  return "background-color:#FFF7ED;color:#C2410C"
+        return ""
+
     styled = (
         view[["Rank", "Item No.", "Item Name", "Brand", "Category",
-              "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day"]]
+              "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
+              "Neg_GP_Days", "GP Risk"]]
         .rename(columns={"Sales": "Sales (KWD)", "COGS": "COGS (KWD)", "GP": "GP (KWD)",
-                         "Sell_Days": "Selling Days", "Avg/Day": "Avg/Day (KWD)"})
+                         "Sell_Days": "Selling Days", "Avg/Day": "Avg/Day (KWD)",
+                         "Neg_GP_Days": "Promo Days"})
         .style
         .format({
-            "Qty": "{:,.0f}", "Sales (KWD)": "{:,.0f}",
-            "COGS (KWD)": "{:,.0f}", "GP (KWD)": "{:,.0f}",
-            "GP%": "{:.1f}%", "Selling Days": "{:.0f}", "Avg/Day (KWD)": "{:,.0f}",
+            "Qty": "{:,.0f}",
+            "Sales (KWD)": "{:,.3f}",
+            "COGS (KWD)": "{:,.3f}",
+            "GP (KWD)": "{:,.3f}",
+            "GP%": "{:.2f}%",
+            "Selling Days": "{:.0f}",
+            "Avg/Day (KWD)": "{:,.3f}",
+            "Promo Days": "{:.0f}",
         })
     )
-    styled = _apply(styled, _style_gp, ["GP%"])
+    styled = _apply(styled, _style_gp,  ["GP%"])
+    styled = _apply(styled, _style_risk, ["GP Risk"])
     st.dataframe(styled, width="stretch", height=460)
+
+    # summary of coupon impact
+    promo_items  = item_agg[item_agg["GP Risk"] == "Coupon/Promo"]
+    pricing_items = item_agg[item_agg["GP Risk"] == "Pricing issue"]
+    if not promo_items.empty or not pricing_items.empty:
+        ci1, ci2 = st.columns(2)
+        with ci1:
+            if not promo_items.empty:
+                lost = promo_items["Neg_GP_Days"].sum()
+                st.info(
+                    f"**{len(promo_items):,} items** have coupon/promo days "
+                    f"({lost:,} total promo-day occurrences) reducing their profit."
+                )
+        with ci2:
+            if not pricing_items.empty:
+                lost_gp = pricing_items["GP"].sum()
+                st.error(
+                    f"**{len(pricing_items):,} items** are priced below cost "
+                    f"(total GP loss: {lost_gp:,.3f} KWD)."
+                )
 
     st.markdown("---")
     st.markdown("#### Item Drilldown - daily breakdown")
@@ -710,7 +765,7 @@ with tab_gap:
             st.dataframe(
                 neg[["Item No.","Item Name","Brand","Category","Qty","Sales_KWD","GP_KWD","GP%","Days"]]
                 .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)","Days":"Selling Days"})
-                .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.0f}",
-                               "GP (KWD)":"{:,.0f}","GP%":"{:.1f}%"}),
+                .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.3f}",
+                               "GP (KWD)":"{:,.3f}","GP%":"{:.2f}%"}),
                 width='stretch', height=400,
             )
