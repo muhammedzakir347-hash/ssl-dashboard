@@ -76,6 +76,7 @@ def push_dataframe(df: pd.DataFrame, table: str) -> None:
     safe_cols = {c: _safe_col(c) for c in df.columns}
     df_safe = df.rename(columns=safe_cols)
     job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
+    df_safe = df_safe.dropna(axis=1, how="all").reset_index(drop=True)
     logger.info("BQ push -> %s (%s rows)", table_ref, len(df_safe))
     job = client.load_table_from_dataframe(df_safe, table_ref, job_config=job_config)
     job.result()
@@ -111,7 +112,7 @@ def upsert_by_month(df: pd.DataFrame, table: str, month_col: str = "Month") -> N
             "BQ upsert: keeping %d existing rows, replacing %d months",
             len(existing), len(months_to_replace),
         )
-        combined = pd.concat([existing, df], ignore_index=True)
+        combined = pd.concat([existing, df], ignore_index=True) if not existing.empty else df.copy()
     else:
         combined = df.copy()
 
