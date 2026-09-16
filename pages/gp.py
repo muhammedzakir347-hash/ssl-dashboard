@@ -284,7 +284,7 @@ with tab_ov:
         height=300,
         margin=dict(t=45, b=10, l=10, r=10),
     )
-    st.plotly_chart(fig_sales, use_container_width=True)
+    st.plotly_chart(fig_sales, width="stretch")
 
     fig_gp_pct = go.Figure()
     fig_gp_pct.add_scatter(
@@ -305,7 +305,7 @@ with tab_ov:
         margin=dict(t=40, b=10, l=10, r=60),
         showlegend=False,
     )
-    st.plotly_chart(fig_gp_pct, use_container_width=True)
+    st.plotly_chart(fig_gp_pct, width="stretch")
 
     c1, c2 = st.columns(2)
 
@@ -322,7 +322,7 @@ with tab_ov:
                       range_color=[0, 30], title="Top 15 Brands by GP (KWD)")
         fig2.update_layout(height=360, margin=dict(l=5, r=5, t=40, b=5),
                            xaxis=dict(tickformat=","))
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width="stretch")
 
     with c2:
         cat_s = (
@@ -337,7 +337,7 @@ with tab_ov:
                       range_color=[0, 30], title="GP% by Category")
         fig3.update_layout(height=max(320, n_cats * 24 + 60),
                            margin=dict(l=5, r=5, t=40, b=5))
-        st.plotly_chart(fig3, use_container_width=True)
+        st.plotly_chart(fig3, width="stretch")
 
     st.markdown("#### Brands dragging GP% down")
     worst = (
@@ -351,7 +351,7 @@ with tab_ov:
     fig4.add_vline(x=15, line_dash="dash",  line_color="#10B981", line_width=1,
                    annotation_text="15% target", annotation_position="top right")
     fig4.update_layout(height=340, margin=dict(l=5, r=5, t=40, b=5))
-    st.plotly_chart(fig4, use_container_width=True)
+    st.plotly_chart(fig4, width="stretch")
 
 
 # --------------------------------------------------------------------------
@@ -409,7 +409,7 @@ with tab_item:
         })
     )
     styled = _apply(styled, _style_gp, ["GP%"])
-    st.dataframe(styled, use_container_width=True, height=460)
+    st.dataframe(styled, width="stretch", height=460)
 
     st.markdown("---")
     st.markdown("#### Item Drilldown - daily breakdown")
@@ -460,7 +460,7 @@ with tab_item:
             height=300,
             legend=dict(orientation="h", y=1.1),
         )
-        st.plotly_chart(fig_d, use_container_width=True)
+        st.plotly_chart(fig_d, width="stretch")
         if zero_days > 0:
             st.caption(
                 f"This item had {zero_days} days with zero sales. "
@@ -496,7 +496,7 @@ with tab_daily:
         yaxis=dict(title="KWD", tickformat=","),
         height=300, margin=dict(t=45, b=10),
     )
-    st.plotly_chart(fig_d2, use_container_width=True)
+    st.plotly_chart(fig_d2, width="stretch")
 
     gap_days = daily[daily["Gap"]]
     st.caption(
@@ -517,7 +517,7 @@ with tab_daily:
                          labels={"Sales Value (KWD)": "Avg Sales (KWD)"})
         fig_dow.update_layout(height=260, margin=dict(l=5, r=5, t=40, b=5),
                               yaxis=dict(tickformat=","))
-        st.plotly_chart(fig_dow, use_container_width=True)
+        st.plotly_chart(fig_dow, width="stretch")
 
     with c2:
         fig_gp = px.line(daily, x="Posting Date", y="GP%", title="Daily GP% Trend")
@@ -526,7 +526,7 @@ with tab_daily:
         fig_gp.update_traces(line_color="#10B981", line_width=2)
         fig_gp.update_layout(height=260, margin=dict(l=5, r=5, t=40, b=5),
                               yaxis=dict(ticksuffix="%"))
-        st.plotly_chart(fig_gp, use_container_width=True)
+        st.plotly_chart(fig_gp, width="stretch")
 
     st.markdown("#### GP% Heatmap - Month x Day of Week")
     hm_raw = (
@@ -546,7 +546,7 @@ with tab_daily:
     )
     fig_hm.update_layout(height=max(260, len(hm_pivot) * 26 + 80),
                          margin=dict(l=5, r=5, t=40, b=5))
-    st.plotly_chart(fig_hm, use_container_width=True)
+    st.plotly_chart(fig_hm, width="stretch")
 
     if not gap_days.empty:
         st.markdown("#### Gap Days Detail")
@@ -554,7 +554,7 @@ with tab_daily:
             gap_days[["Posting Date","DOW","Sales Value (KWD)","GP%"]]
             .rename(columns={"Sales Value (KWD)": "Sales (KWD)"})
             .style.format({"Sales (KWD)": "{:,.0f}", "GP%": "{:.1f}%"}),
-            use_container_width=True, height=240,
+            width='stretch', height=240,
         )
 
 
@@ -627,7 +627,7 @@ with tab_gap:
                 .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)"})
                 .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.0f}",
                                "GP (KWD)":"{:,.0f}","GP%":"{:.1f}%"}),
-                use_container_width=True, height=400,
+                width='stretch', height=400,
             )
 
     with sub_promo:
@@ -662,7 +662,7 @@ with tab_gap:
                 .rename(columns={"Sales Value (KWD)":"Sales (KWD)","total_qty":"Total Qty",
                                  "sell_days":"Selling Days","Spike%":"Spike Day %"})
                 .style.format({"Sales (KWD)":"{:,.0f}","Total Qty":"{:,.0f}","Spike Day %":"{:.1f}%"}),
-                use_container_width=True, height=400,
+                width='stretch', height=400,
             )
 
     with sub_neg:
@@ -684,5 +684,5 @@ with tab_gap:
                 .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)","Days":"Selling Days"})
                 .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.0f}",
                                "GP (KWD)":"{:,.0f}","GP%":"{:.1f}%"}),
-                use_container_width=True, height=400,
+                width='stretch', height=400,
             )

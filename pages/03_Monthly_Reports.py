@@ -317,7 +317,7 @@ with tab_vendor:
         )
         fig.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10),
                           coloraxis_showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
     with c2:
         bot10 = vendor.nsmallest(10, "SSL %").sort_values("SSL %", ascending=False)
@@ -329,7 +329,7 @@ with tab_vendor:
         )
         fig2.update_layout(height=350, margin=dict(l=10, r=10, t=40, b=10),
                            coloraxis_showscale=False)
-        st.plotly_chart(fig2, use_container_width=True)
+        st.plotly_chart(fig2, width="stretch")
 
     styled_v = vendor.style.format({
         "PO Value KD": "{:,.0f}", "PO Qty": "{:,.0f}",
@@ -337,7 +337,7 @@ with tab_vendor:
         "Gap KD": "{:,.0f}", "SSL %": "{:.1f}%", "SKUs": "{:,}",
     })
     st.dataframe(_apply_style(styled_v, _ssl_style, ["SSL %"]),
-                 use_container_width=True, height=520)
+                 width='stretch', height=520)
 
 
 # -- TAB 2: By Category -------------------------------------------------
@@ -362,7 +362,7 @@ with tab_cat:
         legend=dict(orientation="h", y=1.06),
         xaxis_title="Value (KD)",
     )
-    st.plotly_chart(fig_cat, use_container_width=True)
+    st.plotly_chart(fig_cat, width="stretch")
 
     styled_c = cat_df.style.format({
         "PO Value KD": "{:,.0f}", "PO Qty": "{:,.0f}",
@@ -370,7 +370,7 @@ with tab_cat:
         "SSL %": "{:.1f}%", "SKUs": "{:,}",
     })
     st.dataframe(_apply_style(styled_c, _ssl_style, ["SSL %"]),
-                 use_container_width=True)
+                 width='stretch')
 
 
 # -- TAB 3: Sales Performance -------------------------------------------
@@ -479,7 +479,7 @@ with tab_sales:
             legend=dict(orientation="h", y=1.06),
             xaxis_title="Value (KD)",
         )
-        st.plotly_chart(fig_vs, use_container_width=True)
+        st.plotly_chart(fig_vs, width="stretch")
 
         def _st_style(val):
             if pd.isna(val): return ""
@@ -500,7 +500,7 @@ with tab_sales:
             styled_vs = styled_vs.map(_st_style, subset=["Sell-Through %"])
         except AttributeError:
             styled_vs = styled_vs.applymap(_st_style, subset=["Sell-Through %"])
-        st.dataframe(styled_vs, use_container_width=True, height=400)
+        st.dataframe(styled_vs, width="stretch", height=400)
 
         # -- By Category: Received vs Sold
         st.markdown("#### By Category — Received vs Sold")
@@ -544,7 +544,7 @@ with tab_sales:
             legend=dict(orientation="h", y=1.06),
             xaxis_title="Value (KD)",
         )
-        st.plotly_chart(fig_cs, use_container_width=True)
+        st.plotly_chart(fig_cs, width="stretch")
 
         # -- Received but Not Sold (potential OOS / slow movers)
         st.markdown("#### Received but Not Sold (potential out-of-stock or slow movers)")
@@ -574,7 +574,7 @@ with tab_sales:
             disp_s = disp_s[mask_s]
         st.dataframe(
             disp_s.style.format({"Received Qty": "{:,.0f}", "Received Value KD": "{:,.0f}"}),
-            use_container_width=True, height=400,
+            width='stretch', height=400,
         )
 
 
@@ -595,7 +595,7 @@ with tab_sku:
 
     st.dataframe(
         disp.style.format({"PO Value KD": "{:,.0f}", "Ordered Qty": "{:,.0f}"}),
-        use_container_width=True, height=550,
+        width='stretch', height=550,
     )
 
 
@@ -663,7 +663,7 @@ with tab_lines:
             })
             if "Line Status" in disp2.columns:
                 styled2 = _apply_style(styled2, _status_style, ["Line Status"])
-            st.dataframe(styled2, use_container_width=True, height=600)
+            st.dataframe(styled2, width="stretch", height=600)
     else:
         # Streamlit Cloud path
         st.info(
@@ -680,7 +680,7 @@ with tab_lines:
                     f"({len(sku_df):,} rows)**")
         st.dataframe(
             sku_df.style.format({"PO Value KD": "{:,.0f}", "Ordered Qty": "{:,.0f}"}),
-            use_container_width=True, height=400,
+            width='stretch', height=400,
         )
 
 
@@ -805,7 +805,7 @@ with tab_gp:
                 )
                 fig.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10),
                                   coloraxis_showscale=True)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, width="stretch")
 
             with c2:
                 bot10 = brand_gp[brand_gp["Sales Value (KWD)"] > 100].nsmallest(10, "GP%")
@@ -818,7 +818,7 @@ with tab_gp:
                 )
                 fig2.update_layout(height=420, margin=dict(l=10, r=10, t=40, b=10),
                                    coloraxis_showscale=False)
-                st.plotly_chart(fig2, use_container_width=True)
+                st.plotly_chart(fig2, width="stretch")
 
             def _gp_style(val):
                 if val < 0:   return "background-color:#FEF2F2; color:#991B1B"
@@ -834,7 +834,7 @@ with tab_gp:
                 "GP%":               "{:.1f}%",
             })
             styled_brand = _apply_style(styled_brand, _gp_style, ["GP%"])
-            st.dataframe(styled_brand, use_container_width=True, height=400)
+            st.dataframe(styled_brand, width="stretch", height=400)
 
         # -- By Category ----------------------------------------------------
         with sub2:
@@ -856,7 +856,7 @@ with tab_gp:
                 title=f"GP% by Category — {sel_label}",
             )
             fig3.update_layout(height=500, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig3, use_container_width=True)
+            st.plotly_chart(fig3, width="stretch")
 
             styled_cat = cat_gp.style.format({
                 "Sales Value (KWD)": "{:,.0f}",
@@ -866,7 +866,7 @@ with tab_gp:
                 "GP%":               "{:.1f}%",
             })
             styled_cat = _apply_style(styled_cat, _gp_style, ["GP%"])
-            st.dataframe(styled_cat, use_container_width=True, height=400)
+            st.dataframe(styled_cat, width="stretch", height=400)
 
         # Lock button
         st.markdown("---")

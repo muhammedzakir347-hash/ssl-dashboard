@@ -414,7 +414,7 @@ _styled = _tbl.style.map(_style_ssl, subset=_ssl_cols)
 if _growth_cols:
     _styled = _styled.map(_style_growth, subset=_growth_cols)
 
-st.dataframe(_styled, use_container_width=True, hide_index=True)
+st.dataframe(_styled, width="stretch", hide_index=True)
 
 # ──────────────────────────────────────────────────────────────────────
 # CHARTS
@@ -464,7 +464,7 @@ fig_ssl.update_layout(
     xaxis_title="",
     dragmode=False,
 )
-st.plotly_chart(fig_ssl, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig_ssl, width="stretch", config=_CHART_CFG)
 
 st.markdown("---")
 
@@ -491,7 +491,7 @@ with _c1:
         yaxis_title="Value (KD)", xaxis_title="",
         dragmode=False,
     )
-    st.plotly_chart(fig_po, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig_po, width="stretch", config=_CHART_CFG)
 
 with _c2:
     st.markdown('<div class="section-title">Received Value by Month (KD)</div>', unsafe_allow_html=True)
@@ -513,7 +513,7 @@ with _c2:
         yaxis_title="Value (KD)", xaxis_title="",
         dragmode=False,
     )
-    st.plotly_chart(fig_rec, use_container_width=True, config=_CHART_CFG)
+    st.plotly_chart(fig_rec, width="stretch", config=_CHART_CFG)
 
 st.markdown("---")
 
@@ -556,7 +556,7 @@ fig_heat.update_layout(
     xaxis_title="", yaxis_title="",
     dragmode=False,
 )
-st.plotly_chart(fig_heat, use_container_width=True, config=_CHART_CFG)
+st.plotly_chart(fig_heat, width="stretch", config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # EXCEL EXPORT
