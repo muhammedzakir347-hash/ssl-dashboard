@@ -143,8 +143,8 @@ div[data-testid="metric-container"] div[data-testid="stMetricDelta"] {
 # ──────────────────────────────────────────────────────────────────────
 # DATA LOADING
 # ──────────────────────────────────────────────────────────────────────
+@st.cache_data(ttl=300, show_spinner=False)
 def _ssl_bq_timestamp() -> str:
-    """Uncached — called on every page load to detect new data pushes."""
     try:
         import bigquery_client as bq
         return bq.get_last_updated(bq.TABLE_SSL) or "no-bq"
@@ -197,8 +197,9 @@ def load_data(from_month: str, to_month: str, cache_key: str):
     return None, "No data found. Run main.py to populate the database."
 
 
-_bq_ts     = _ssl_bq_timestamp()
-_all_months = _get_months_meta(_bq_ts)   # ~10 rows, very fast
+with st.spinner("Connecting to database..."):
+    _bq_ts      = _ssl_bq_timestamp()
+    _all_months = _get_months_meta(_bq_ts)
 
 if not _all_months:
     st.error("No data found. Run `python main.py` to populate the database.")
