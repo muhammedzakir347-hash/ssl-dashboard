@@ -133,15 +133,13 @@ def read_table(table: str, restore_columns: dict | None = None) -> pd.DataFrame:
 
 
 def get_distinct_months(table: str) -> list[str]:
-    """Return sorted list of all distinct Month values — cheap metadata query.
-    Used to populate date-picker bounds without loading the full table.
-    """
+    """Return sorted list of all distinct Month values — cheap metadata query."""
     client = get_client()
     query = (
         f"SELECT DISTINCT Month FROM `{PROJECT_ID}.{DATASET}.{table}` "
         f"WHERE Month IS NOT NULL ORDER BY Month"
     )
-    result = client.query(query).to_dataframe()
+    result = client.query(query, timeout=15).result(timeout=15).to_dataframe()
     return sorted(result["Month"].dropna().tolist())
 
 
@@ -178,7 +176,7 @@ INV_RESTORE = {
 
 def table_exists(table: str) -> bool:
     try:
-        get_client().get_table(f"{PROJECT_ID}.{DATASET}.{table}")
+        get_client().get_table(f"{PROJECT_ID}.{DATASET}.{table}", timeout=10)
         return True
     except Exception:
         return False
@@ -188,7 +186,7 @@ def get_last_updated(table: str) -> str | None:
     """Return the last-modified time of a BQ table in Kuwait time (UTC+3), or None on failure."""
     try:
         from datetime import timezone, timedelta
-        t = get_client().get_table(f"{PROJECT_ID}.{DATASET}.{table}")
+        t = get_client().get_table(f"{PROJECT_ID}.{DATASET}.{table}", timeout=10)
         if t.modified:
             kwt = timezone(timedelta(hours=3))
             local_dt = t.modified.astimezone(kwt)
