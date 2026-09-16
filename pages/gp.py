@@ -277,11 +277,12 @@ st.markdown(f"""
 # ==========================================================================
 # TABS
 # ==========================================================================
-tab_ov, tab_item, tab_daily, tab_gap = st.tabs([
+tab_ov, tab_item, tab_daily, tab_gap, tab_trend = st.tabs([
     "Overview",
     "Item Analysis",
     "Daily Pattern",
     "Gap & Promo",
+    "Trending",
 ])
 
 
@@ -769,3 +770,275 @@ with tab_gap:
                                "GP (KWD)":"{:,.3f}","GP%":"{:.2f}%"}),
                 width='stretch', height=400,
             )
+
+# ==========================================================================
+# TAB 5  TRENDING
+# ==========================================================================
+with tab_trend:
+    st.markdown("### Trending Items")
+
+    sub_hot, sub_rising, sub_new, sub_seasonal = st.tabs([
+        "🔥 Hot Right Now",
+        "📈 Rising",
+        "🆕 New Arrivals",
+        "📅 Seasonal",
+    ])
+
+    # ── shared helpers ──────────────────────────────────────────────────────
+    all_months = sorted(df["Month"].unique())
+    last_month = all_months[-1] if all_months else None
+    prev_months = all_months[:-1] if len(all_months) > 1 else []
+
+    meta_cols = ["Item No.", "Item Name", "Brand", "Category"]
+
+    def _meta(base_df):
+        return base_df[meta_cols].drop_duplicates("Item No.")
+
+    # ── HOT RIGHT NOW ───────────────────────────────────────────────────────
+    with sub_hot:
+        if last_month is None:
+            st.info("No data available.")
+        else:
+            st.markdown(f"**Top 20 items by Sales Value** in **{last_month}**")
+            hot = (
+                df[df["Month"] == last_month]
+                .groupby(["Item No.", "Item Name", "Brand", "Category"])
+                .agg(
+                    Sales_KWD=("Sales Value (KWD)", "sum"),
+                    GP_KWD   =("GP (KWD)",          "sum"),
+                    Qty      =("Sales Qty",          "sum"),
+                    Days     =("Posting Date",       "nunique"),
+                )
+                .reset_index()
+                .sort_values("Sales_KWD", ascending=False)
+                .head(20)
+            )
+            hot["GP%"]      = (hot["GP_KWD"] / hot["Sales_KWD"] * 100).where(hot["Sales_KWD"] > 0, 0).round(2)
+            hot["Avg/Day"]  = (hot["Sales_KWD"] / hot["Days"]).round(3)
+            hot["Rank"]     = range(1, len(hot) + 1)
+
+            # bar chart
+            chart_hot = hot[["Rank", "Item Name", "Sales_KWD"]].copy()
+            chart_hot["Label"] = chart_hot["Rank"].astype(str) + ". " + chart_hot["Item Name"].str[:30]
+            fig_h = go.Figure(go.Bar(
+                x=chart_hot["Sales_KWD"],
+                y=chart_hot["Label"],
+                orientation="h",
+                marker_color="#2ecc71",
+                text=chart_hot["Sales_KWD"].map(lambda v: f"{v:,.0f}"),
+                textposition="outside",
+            ))
+            fig_h.update_layout(
+                height=500, margin=dict(l=10, r=60, t=30, b=10),
+                xaxis_title="Sales (KWD)", yaxis=dict(autorange="reversed"),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+            )
+            st.plotly_chart(fig_h, use_container_width=True)
+
+            st.dataframe(
+                hot[["Rank","Item No.","Item Name","Brand","Category","Qty","Sales_KWD","GP_KWD","GP%","Avg/Day","Days"]]
+                .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)","Days":"Selling Days"})
+                .style.format({
+                    "Qty":"{:,.0f}","Sales (KWD)":"{:,.3f}",
+                    "GP (KWD)":"{:,.3f}","GP%":"{:.2f}%",
+                    "Avg/Day":"{:,.3f}","Selling Days":"{:,.0f}",
+                }),
+                width='stretch', height=400,
+            )
+
+    # ── RISING ──────────────────────────────────────────────────────────────
+    with sub_rising:
+        if last_month is None or len(all_months) < 2:
+            st.info("Need at least 2 months of data to compute rising trends.")
+        else:
+            st.markdown(
+                f"Items where **{last_month} sales exceed the 3-month rolling average by 30%+**"
+            )
+            lookback = all_months[-4:-1]  # up to 3 prior months
+
+            cur = (
+                df[df["Month"] == last_month]
+                .groupby("Item No.")["Sales Value (KWD)"].sum()
+                .rename("cur_sales")
+            )
+            prior = (
+                df[df["Month"].isin(lookback)]
+                .groupby(["Item No.", "Month"])["Sales Value (KWD)"].sum()
+                .reset_index()
+                .groupby("Item No.")["Sales Value (KWD)"]
+                .mean()
+                .rename("avg_sales")
+            )
+            rising = cur.to_frame().join(prior, how="inner")
+            rising = rising[rising["avg_sales"] > 0].copy()
+            rising["Growth%"] = ((rising["cur_sales"] - rising["avg_sales"]) / rising["avg_sales"] * 100).round(1)
+            rising = rising[rising["Growth%"] >= 30].sort_values("Growth%", ascending=False)
+
+            rising = rising.join(_meta(df).set_index("Item No."), how="left")
+
+            if rising.empty:
+                st.success("No strongly rising items in the current month.")
+            else:
+                st.info(f"{len(rising):,} items growing 30%+ vs their 3-month average.")
+
+                fig_r = go.Figure(go.Bar(
+                    x=rising.head(20)["Growth%"],
+                    y=rising.head(20).index.str[:] + " – " + rising.head(20)["Item Name"].str[:25].fillna(""),
+                    orientation="h",
+                    marker_color="#e74c3c",
+                    text=rising.head(20)["Growth%"].map(lambda v: f"+{v:.1f}%"),
+                    textposition="outside",
+                ))
+                fig_r.update_layout(
+                    height=500, margin=dict(l=10, r=80, t=30, b=10),
+                    xaxis_title="Growth % vs 3-month avg",
+                    yaxis=dict(autorange="reversed"),
+                    plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                )
+                st.plotly_chart(fig_r, use_container_width=True)
+
+                st.dataframe(
+                    rising[["Item Name","Brand","Category","avg_sales","cur_sales","Growth%"]]
+                    .rename(columns={
+                        "avg_sales":"3M Avg Sales (KWD)",
+                        "cur_sales":f"{last_month} Sales (KWD)",
+                        "Growth%":"Growth %",
+                    })
+                    .style.format({
+                        "3M Avg Sales (KWD)":"{:,.3f}",
+                        f"{last_month} Sales (KWD)":"{:,.3f}",
+                        "Growth %":"{:+.1f}%",
+                    }),
+                    width='stretch', height=400,
+                )
+
+    # ── NEW ARRIVALS ─────────────────────────────────────────────────────────
+    with sub_new:
+        cutoff_days = st.slider("New if first sale within last N days", 30, 120, 60, step=10)
+        cutoff_date = df["Posting Date"].max() - pd.Timedelta(days=cutoff_days)
+
+        first_sale = df.groupby("Item No.")["Posting Date"].min().rename("First Sale")
+        new_items  = first_sale[first_sale >= cutoff_date].reset_index()
+        new_items  = new_items.join(_meta(df).set_index("Item No."), on="Item No.", how="left")
+
+        totals = (
+            df.groupby("Item No.")[["Sales Value (KWD)", "GP (KWD)", "Sales Qty"]]
+            .sum()
+            .rename(columns={"Sales Value (KWD)":"Sales_KWD","GP (KWD)":"GP_KWD","Sales Qty":"Qty"})
+        )
+        new_items = new_items.join(totals, on="Item No.", how="left")
+        new_items["GP%"] = (new_items["GP_KWD"] / new_items["Sales_KWD"] * 100).where(new_items["Sales_KWD"] > 0, 0).round(2)
+        new_items = new_items.sort_values("Sales_KWD", ascending=False)
+
+        if new_items.empty:
+            st.success(f"No items with first sale in the last {cutoff_days} days.")
+        else:
+            st.info(f"**{len(new_items):,} new items** with first sale since {cutoff_date.strftime('%Y-%m-%d')}.")
+            st.dataframe(
+                new_items[["Item No.","Item Name","Brand","Category","First Sale","Qty","Sales_KWD","GP_KWD","GP%"]]
+                .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)"})
+                .assign(**{"First Sale": new_items["First Sale"].dt.strftime("%Y-%m-%d")})
+                .style.format({
+                    "Qty":"{:,.0f}","Sales (KWD)":"{:,.3f}",
+                    "GP (KWD)":"{:,.3f}","GP%":"{:.2f}%",
+                }),
+                width='stretch', height=400,
+            )
+
+    # ── SEASONAL ─────────────────────────────────────────────────────────────
+    with sub_seasonal:
+        if last_month is None:
+            st.info("No data available.")
+        else:
+            # e.g. last_month = "2026-09" → same_month_ly = "2025-09"
+            try:
+                lm_period = pd.Period(last_month, "M")
+                ly_period = lm_period - 12
+                ly_month  = str(ly_period)
+            except Exception:
+                ly_month = None
+
+            if ly_month not in all_months:
+                st.info(
+                    f"Seasonal comparison needs data for **{ly_month}** (same month last year). "
+                    "Expand the month range to include it."
+                )
+            else:
+                st.markdown(f"**{last_month}** vs **{ly_month}** — same month, year-over-year")
+
+                def _month_agg(month):
+                    return (
+                        df[df["Month"] == month]
+                        .groupby("Item No.")
+                        .agg(Sales_KWD=("Sales Value (KWD)","sum"), GP_KWD=("GP (KWD)","sum"),
+                             Qty=("Sales Qty","sum"))
+                        .reset_index()
+                    )
+
+                cy = _month_agg(last_month).set_index("Item No.")
+                ly = _month_agg(ly_month).set_index("Item No.")
+
+                seas = cy.join(ly, how="outer", lsuffix="_cy", rsuffix="_ly").fillna(0)
+                seas["YoY_Sales%"] = ((seas["Sales_KWD_cy"] - seas["Sales_KWD_ly"]) /
+                                      seas["Sales_KWD_ly"].replace(0, pd.NA) * 100).round(1)
+                seas["YoY_GP%"]    = ((seas["GP_KWD_cy"] - seas["GP_KWD_ly"]) /
+                                      seas["GP_KWD_ly"].replace(0, pd.NA) * 100).round(1)
+                seas = seas.join(_meta(df).set_index("Item No."), how="left")
+                seas = seas.sort_values("Sales_KWD_cy", ascending=False).reset_index()
+
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    winners = seas.dropna(subset=["YoY_Sales%"]).nlargest(10, "YoY_Sales%")
+                    fig_w = go.Figure(go.Bar(
+                        x=winners["YoY_Sales%"],
+                        y=winners["Item No."] + " " + winners["Item Name"].str[:20].fillna(""),
+                        orientation="h",
+                        marker_color="#27ae60",
+                        text=winners["YoY_Sales%"].map(lambda v: f"+{v:.0f}%"),
+                        textposition="outside",
+                    ))
+                    fig_w.update_layout(
+                        title="Top 10 YoY Gainers", height=350,
+                        margin=dict(l=5, r=60, t=40, b=5),
+                        yaxis=dict(autorange="reversed"),
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    )
+                    st.plotly_chart(fig_w, use_container_width=True)
+
+                with col_b:
+                    losers = seas.dropna(subset=["YoY_Sales%"]).nsmallest(10, "YoY_Sales%")
+                    fig_l = go.Figure(go.Bar(
+                        x=losers["YoY_Sales%"],
+                        y=losers["Item No."] + " " + losers["Item Name"].str[:20].fillna(""),
+                        orientation="h",
+                        marker_color="#e74c3c",
+                        text=losers["YoY_Sales%"].map(lambda v: f"{v:.0f}%"),
+                        textposition="outside",
+                    ))
+                    fig_l.update_layout(
+                        title="Top 10 YoY Decliners", height=350,
+                        margin=dict(l=5, r=60, t=40, b=5),
+                        yaxis=dict(autorange="reversed"),
+                        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                    )
+                    st.plotly_chart(fig_l, use_container_width=True)
+
+                st.dataframe(
+                    seas[[
+                        "Item No.","Item Name","Brand","Category",
+                        "Sales_KWD_ly","Sales_KWD_cy","YoY_Sales%",
+                        "GP_KWD_ly","GP_KWD_cy","YoY_GP%",
+                    ]].rename(columns={
+                        "Sales_KWD_ly":f"Sales {ly_month}","Sales_KWD_cy":f"Sales {last_month}",
+                        "YoY_Sales%":"Sales YoY%",
+                        "GP_KWD_ly":f"GP {ly_month}","GP_KWD_cy":f"GP {last_month}",
+                        "YoY_GP%":"GP YoY%",
+                    })
+                    .style.format({
+                        f"Sales {ly_month}":"{:,.3f}", f"Sales {last_month}":"{:,.3f}",
+                        "Sales YoY%":"{:+.1f}%",
+                        f"GP {ly_month}":"{:,.3f}", f"GP {last_month}":"{:,.3f}",
+                        "GP YoY%":"{:+.1f}%",
+                    }),
+                    width='stretch', height=450,
+                )
