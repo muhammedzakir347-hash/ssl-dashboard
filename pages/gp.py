@@ -98,10 +98,22 @@ GP_DIR = Path(__file__).parent.parent / "downloads" / "gp"
 
 @st.cache_data(ttl=3600, show_spinner="Loading GP data ...")
 def load_all_gp() -> pd.DataFrame:
+    # Try local CSVs first (local dev)
     files = sorted(GP_DIR.glob("*_gp.csv"))
-    if not files:
-        return pd.DataFrame()
-    df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    if files:
+        df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+    else:
+        # Fall back to BigQuery (Streamlit Cloud)
+        try:
+            import bigquery_client as bq
+            df = bq.read_table_range(bq.TABLE_GP, "2025-01", "2026-12")
+        except Exception as e:
+            st.error(f"Could not load GP data: {e}")
+            return pd.DataFrame()
+
+    if df.empty:
+        return df
+
     df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
     df["Month"] = df["Posting Date"].dt.to_period("M").astype(str)
     df["DOW"]   = df["Posting Date"].dt.day_name()
@@ -114,7 +126,7 @@ def load_all_gp() -> pd.DataFrame:
 raw = load_all_gp()
 
 if raw.empty:
-    st.error("No local GP CSV files found in downloads/gp/. Run fetch_gp_report.py first.")
+    st.error("No GP data found. Check BigQuery connection or run fetch_gp_report.py locally.")
     st.stop()
 
 
