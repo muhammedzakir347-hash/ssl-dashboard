@@ -1013,9 +1013,9 @@ with tab_trend:
 
                 seas = cy.join(ly, how="outer", lsuffix="_cy", rsuffix="_ly").fillna(0)
                 seas["YoY_Sales%"] = ((seas["Sales_KWD_cy"] - seas["Sales_KWD_ly"]) /
-                                      seas["Sales_KWD_ly"].replace(0, pd.NA) * 100).round(1)
+                                      seas["Sales_KWD_ly"].replace(0, float("nan")) * 100).round(1)
                 seas["YoY_GP%"]    = ((seas["GP_KWD_cy"] - seas["GP_KWD_ly"]) /
-                                      seas["GP_KWD_ly"].replace(0, pd.NA) * 100).round(1)
+                                      seas["GP_KWD_ly"].replace(0, float("nan")) * 100).round(1)
                 combined_meta = pd.concat([df[meta_cols], ly_raw[meta_cols]], ignore_index=True)
                 seas = seas.join(_meta(combined_meta).set_index("Item No."), how="left")
                 seas = seas.sort_values("Sales_KWD_cy", ascending=False).reset_index()
