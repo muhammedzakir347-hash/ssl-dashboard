@@ -91,22 +91,59 @@ def _apply(styler, fn, cols):
 
 
 # ==========================================================================
-# DATA LOADING
+# DATA LOADING  (lazy: months list first, then range on demand)
 # ==========================================================================
 GP_DIR = Path(__file__).parent.parent / "downloads" / "gp"
 
+_BQ_COL_MAP = {
+    "Posting_Date":     "Posting Date",
+    "Item_No":          "Item No.",
+    "Item_Name":        "Item Name",
+    "Sales_Qty":        "Sales Qty",
+    "Sales_Value__KWD": "Sales Value (KWD)",
+    "COGS__KWD":        "COGS (KWD)",
+    "GP__KWD":          "GP (KWD)",
+    "GP":               "GP%",
+}
 
-@st.cache_data(ttl=3600, show_spinner="Loading GP data ...")
-def load_all_gp() -> pd.DataFrame:
-    # Try local CSVs first (local dev)
-    files = sorted(GP_DIR.glob("*_gp.csv"))
-    if files:
-        df = pd.concat([pd.read_csv(f) for f in files], ignore_index=True)
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _gp_months_local() -> list[str]:
+    """Return available months from local CSV files (fast)."""
+    months = set()
+    for f in GP_DIR.glob("*_gp.csv"):
+        m = f.stem.replace("_gp", "")
+        if len(m) == 7:
+            months.add(m)
+    return sorted(months)
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _gp_months_bq() -> list[str]:
+    """Return available months from BigQuery (cheap DISTINCT query)."""
+    try:
+        import bigquery_client as bq
+        return bq.get_distinct_months(bq.TABLE_GP)
+    except Exception:
+        return []
+
+
+@st.cache_data(ttl=1800, show_spinner="Loading GP data ...")
+def load_gp_range(from_month: str, to_month: str) -> pd.DataFrame:
+    """Load GP data for the selected month range only — avoids loading 3M+ rows."""
+    # Local CSVs first (dev)
+    local_files = [
+        GP_DIR / f"{m}_gp.csv"
+        for m in _gp_months_local()
+        if from_month <= m <= to_month
+    ]
+    if local_files:
+        dfs = [pd.read_csv(f) for f in local_files if f.exists()]
+        df = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
     else:
-        # Fall back to BigQuery (Streamlit Cloud)
         try:
             import bigquery_client as bq
-            df = bq.read_table_range(bq.TABLE_GP, "2025-01", "2026-12")
+            df = bq.read_table_range(bq.TABLE_GP, from_month, to_month)
         except Exception as e:
             st.error(f"Could not load GP data: {e}")
             return pd.DataFrame()
@@ -114,18 +151,7 @@ def load_all_gp() -> pd.DataFrame:
     if df.empty:
         return df
 
-    # Normalise BigQuery snake_case column names → friendly spaced names
-    df = df.rename(columns={
-        "Posting_Date":      "Posting Date",
-        "Item_No":           "Item No.",
-        "Item_Name":         "Item Name",
-        "Sales_Qty":         "Sales Qty",
-        "Sales_Value__KWD":  "Sales Value (KWD)",
-        "COGS__KWD":         "COGS (KWD)",
-        "GP__KWD":           "GP (KWD)",
-        "GP":                "GP%",
-    })
-
+    df = df.rename(columns=_BQ_COL_MAP)
     df["Posting Date"] = pd.to_datetime(df["Posting Date"], errors="coerce")
     df["Month"] = df["Posting Date"].dt.to_period("M").astype(str)
     df["DOW"]   = df["Posting Date"].dt.day_name()
@@ -135,22 +161,20 @@ def load_all_gp() -> pd.DataFrame:
     return df
 
 
-raw = load_all_gp()
-
-if raw.empty:
-    st.error("No GP data found. Check BigQuery connection or run fetch_gp_report.py locally.")
-    st.stop()
-
-
 # ==========================================================================
-# SIDEBAR - FILTERS
+# SIDEBAR - FILTERS  (show month picker before loading data)
 # ==========================================================================
 with st.sidebar:
     st.markdown("### Filters")
 
-    all_months = sorted(raw["Month"].dropna().unique())
-    def_start  = all_months[-6] if len(all_months) >= 6 else all_months[0]
-    def_end    = all_months[-1]
+    # Get month list cheaply — no full data load yet
+    all_months = _gp_months_local() or _gp_months_bq()
+    if not all_months:
+        st.error("No GP data found. Run fetch_gp_report.py or check BigQuery.")
+        st.stop()
+
+    def_start = all_months[-6] if len(all_months) >= 6 else all_months[0]
+    def_end   = all_months[-1]
 
     col_s, col_e = st.columns(2)
     with col_s:
@@ -162,27 +186,31 @@ with st.sidebar:
         st.error("'From' must be before 'To'.")
         st.stop()
 
-    df = raw[(raw["Month"] >= from_month) & (raw["Month"] <= to_month)].copy()
+# Load only the selected range (cached per range)
+raw = load_gp_range(from_month, to_month)
 
-    cats = sorted(df["Category"].dropna().unique())
+if raw.empty:
+    st.warning("No GP data for selected period.")
+    st.stop()
+
+with st.sidebar:
+    cats = sorted(raw["Category"].dropna().unique())
     sel_cats = st.multiselect("Category", cats, placeholder="All categories")
-    if sel_cats:
-        df = df[df["Category"].isin(sel_cats)]
 
-    brands = sorted(df["Brand"].dropna().unique())
+    brands = sorted(raw["Brand"].dropna().unique())
     sel_brands = st.multiselect("Brand", brands, placeholder="All brands")
-    if sel_brands:
-        df = df[df["Brand"].isin(sel_brands)]
 
     item_q = st.text_input("Search item", placeholder="Name or item no.")
-    if item_q:
-        mask = (
-            df["Item Name"].str.contains(item_q, case=False, na=False) |
-            df["Item No."].str.contains(item_q, case=False, na=False)
-        )
-        df = df[mask]
-
     min_sales = st.number_input("Min Sales Value (KWD)", min_value=0, value=0, step=500)
+
+df = raw.copy()
+if sel_cats:   df = df[df["Category"].isin(sel_cats)]
+if sel_brands: df = df[df["Brand"].isin(sel_brands)]
+if item_q:
+    df = df[
+        df["Item Name"].str.contains(item_q, case=False, na=False) |
+        df["Item No."].str.contains(item_q, case=False, na=False)
+    ]
 
 period_label = f"{from_month} to {to_month}"
 
