@@ -106,8 +106,13 @@ def upsert_by_month(df: pd.DataFrame, table: str, month_col: str = "Month") -> N
     """
     if table_exists(table):
         existing = read_table(table)
+        # BQ returns snake_case column names; map them back so concat aligns correctly.
+        safe_to_orig = {_safe_col(c): c for c in df.columns}
+        existing = existing.rename(columns=safe_to_orig)
         months_to_replace = {str(m) for m in df[month_col].dropna().unique()}
-        existing = existing[~existing[month_col].isin(months_to_replace)]
+        # Use the original column name for filtering (post-rename)
+        bq_month_col = safe_to_orig.get(_safe_col(month_col), month_col)
+        existing = existing[~existing[bq_month_col].isin(months_to_replace)]
         logger.info(
             "BQ upsert: keeping %d existing rows, replacing %d months",
             len(existing), len(months_to_replace),

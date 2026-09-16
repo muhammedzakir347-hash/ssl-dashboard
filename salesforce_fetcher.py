@@ -114,6 +114,16 @@ def get_sf_connection() -> Salesforce:
             domain=config.SF_DOMAIN,
         )
     except SalesforceAuthenticationFailed as exc:
+        # 503 / 504 = Salesforce maintenance or timeout — NOT a credential error.
+        # Don't set the backoff; just raise so the caller can retry later.
+        exc_str = str(exc)
+        if any(code in exc_str for code in ("503", "504", "502")) or \
+                any(kw in exc_str.lower() for kw in ("maintenance", "timeout", "upstream")):
+            logger.error(
+                "Salesforce is temporarily unavailable (%s). Will retry when it's back up.",
+                exc_str[:120],
+            )
+            raise
         _set_auth_backoff()
         logger.error(
             "Salesforce authentication FAILED — wrong password or security token. "
