@@ -29,7 +29,7 @@ except Exception:
 
 # ── Navigation ─────────────────────────────────────────────────────────────
 pg = st.navigation([
-    st.Page("dashboard.py",                title="SSL Dashboard",   icon="📦", default=True),
+    st.Page("pages/Home.py",               title="SSL Dashboard",   icon="📦", default=True),
     st.Page("pages/01_Inventory_Aging.py", title="Inventory Aging", icon="📊"),
     st.Page("pages/02_Comparison.py",      title="Comparison",      icon="📈"),
     st.Page("pages/03_Monthly_Reports.py", title="Monthly Reports",  icon="📋"),
