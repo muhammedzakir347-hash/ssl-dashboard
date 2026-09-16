@@ -11,7 +11,6 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 import config
-import data_processor
 
 # ──────────────────────────────────────────────────────────────────────
 # THEME / CSS
@@ -386,7 +385,7 @@ styled = (
         "SSL % (Value)":       lambda x: f"{x:.1f}%" if pd.notna(x) else "—",
     })
 )
-st.dataframe(styled, width="stretch", height=400)
+st.dataframe(styled, use_container_width=True, height=400)
 
 # ──────────────────────────────────────────────────────────────────────
 # CHARTS ROW
@@ -426,7 +425,7 @@ fig1.update_layout(
     yaxis_title="", xaxis_title="SSL %", dragmode=False,
 )
 fig1.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-st.plotly_chart(fig1, width="stretch", config=_CHART_CFG)
+st.plotly_chart(fig1, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # SECOND CHARTS ROW
@@ -459,7 +458,7 @@ with c3:
         yaxis_title="", xaxis_title="SSL %", dragmode=False,
     )
     fig3.update_traces(textposition="inside", insidetextanchor="middle", textfont_color="#FAF6EF")
-    st.plotly_chart(fig3, width="stretch", config=_CHART_CFG)
+    st.plotly_chart(fig3, use_container_width=True, config=_CHART_CFG)
 
 # Chart 4 — PO Value vs Received Value by Category (grouped bar)
 with c4:
@@ -488,7 +487,7 @@ with c4:
         margin=dict(l=0,r=20,t=30,b=10), height=400,
         yaxis_title="Value (KD)", xaxis_title="", dragmode=False,
     )
-    st.plotly_chart(fig4, width="stretch", config=_CHART_CFG)
+    st.plotly_chart(fig4, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # COMPARE CTA — links to dedicated comparison page
@@ -546,7 +545,7 @@ fig_mom.update_layout(
     yaxis2=dict(title="SSL %", overlaying="y", side="right", range=[0,115], showgrid=False, ticksuffix="%"),
     dragmode=False,
 )
-st.plotly_chart(fig_mom, width="stretch", config=_CHART_CFG)
+st.plotly_chart(fig_mom, use_container_width=True, config=_CHART_CFG)
 
 # ──────────────────────────────────────────────────────────────────────
 # DRILL-DOWN — Raw item level
@@ -576,7 +575,7 @@ st.dataframe(
         .map(color_ssl, subset=["SSL % (Value)"])
         .format({"PO Value (KD)": "{:,.2f}", "Received (KD)": "{:,.2f}",
                  "SSL % (Value)": lambda x: f"{x:.1f}%" if pd.notna(x) else "—"}),
-    width="stretch", height=350
+    use_container_width=True, height=350
 )
 
 # ──────────────────────────────────────────────────────────────────────
