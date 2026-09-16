@@ -849,12 +849,19 @@ with tab_trend:
     # ── RISING ──────────────────────────────────────────────────────────────
     with sub_rising:
         if last_month is None or len(all_months) < 2:
-            st.info("Need at least 2 months of data to compute rising trends.")
+            st.info("Need at least 2 months of data loaded to compute rising trends. "
+                    "Expand the **From** month in the sidebar.")
         else:
-            st.markdown(
-                f"Items where **{last_month} sales exceed the 3-month rolling average by 30%+**"
+            growth_threshold = st.slider(
+                "Min growth % vs prior average", 5, 100, 20, step=5,
+                help="Show items where current-month sales exceed the prior average by at least this %"
             )
             lookback = all_months[-4:-1]  # up to 3 prior months
+            st.markdown(
+                f"Items where **{last_month}** sales exceed the "
+                f"{'–'.join([lookback[0], lookback[-1]]) if len(lookback)>1 else lookback[0] if lookback else 'prior'} "
+                f"average by **{growth_threshold}%+**"
+            )
 
             cur = (
                 df[df["Month"] == last_month]
@@ -872,14 +879,15 @@ with tab_trend:
             rising = cur.to_frame().join(prior, how="inner")
             rising = rising[rising["avg_sales"] > 0].copy()
             rising["Growth%"] = ((rising["cur_sales"] - rising["avg_sales"]) / rising["avg_sales"] * 100).round(1)
-            rising = rising[rising["Growth%"] >= 30].sort_values("Growth%", ascending=False)
+            rising = rising[rising["Growth%"] >= growth_threshold].sort_values("Growth%", ascending=False)
 
             rising = rising.join(_meta(df).set_index("Item No."), how="left")
 
             if rising.empty:
-                st.success("No strongly rising items in the current month.")
+                st.info(f"No items with {growth_threshold}%+ growth vs prior average. "
+                        "Try lowering the slider above.")
             else:
-                st.info(f"{len(rising):,} items growing 30%+ vs their 3-month average.")
+                st.success(f"{len(rising):,} items growing {growth_threshold}%+ vs their prior average.")
 
                 fig_r = go.Figure(go.Bar(
                     x=rising.head(20)["Growth%"],
@@ -915,11 +923,16 @@ with tab_trend:
     # ── NEW ARRIVALS ─────────────────────────────────────────────────────────
     with sub_new:
         cutoff_days = st.slider("New if first sale within last N days", 30, 120, 60, step=10)
-        cutoff_date = df["Posting Date"].max() - pd.Timedelta(days=cutoff_days)
+        # Use raw (full selected period, no category filter) for first-sale dates
+        # so category/brand filters don't hide an item's real history
+        cutoff_date = raw["Posting Date"].max() - pd.Timedelta(days=cutoff_days)
 
-        first_sale = df.groupby("Item No.")["Posting Date"].min().rename("First Sale")
-        new_items  = first_sale[first_sale >= cutoff_date].reset_index()
-        new_items  = new_items.join(_meta(df).set_index("Item No."), on="Item No.", how="left")
+        first_sale_all = raw.groupby("Item No.")["Posting Date"].min().rename("First Sale")
+        # Keep only items that appear in the current (filtered) df
+        items_in_view  = df["Item No."].unique()
+        first_sale     = first_sale_all[first_sale_all.index.isin(items_in_view)]
+        new_items      = first_sale[first_sale >= cutoff_date].reset_index()
+        new_items      = new_items.join(_meta(df).set_index("Item No."), on="Item No.", how="left")
 
         totals = (
             df.groupby("Item No.")[["Sales Value (KWD)", "GP (KWD)", "Sales Qty"]]
@@ -931,9 +944,12 @@ with tab_trend:
         new_items = new_items.sort_values("Sales_KWD", ascending=False)
 
         if new_items.empty:
-            st.success(f"No items with first sale in the last {cutoff_days} days.")
+            st.info(
+                f"No items whose **first-ever sale in the loaded period** falls within the last {cutoff_days} days. "
+                "Try increasing the slider or loading more historical months."
+            )
         else:
-            st.info(f"**{len(new_items):,} new items** with first sale since {cutoff_date.strftime('%Y-%m-%d')}.")
+            st.success(f"**{len(new_items):,} new items** with first sale since {cutoff_date.strftime('%Y-%m-%d')}.")
             st.dataframe(
                 new_items[["Item No.","Item Name","Brand","Category","First Sale","Qty","Sales_KWD","GP_KWD","GP%"]]
                 .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)"})
@@ -958,32 +974,50 @@ with tab_trend:
             except Exception:
                 ly_month = None
 
-            if ly_month not in all_months:
+            # Load last year's month independently — no need to expand the date filter
+            ly_raw = pd.DataFrame()
+            if ly_month:
+                try:
+                    ly_raw = load_gp_range(ly_month, ly_month)
+                    # Apply same category/brand/item filters
+                    if not ly_raw.empty:
+                        if sel_cats:   ly_raw = ly_raw[ly_raw["Category"].isin(sel_cats)]
+                        if sel_brands: ly_raw = ly_raw[ly_raw["Brand"].isin(sel_brands)]
+                        if item_q:
+                            ly_raw = ly_raw[
+                                ly_raw["Item Name"].str.contains(item_q, case=False, na=False) |
+                                ly_raw["Item No."].str.contains(item_q, case=False, na=False)
+                            ]
+                except Exception:
+                    ly_raw = pd.DataFrame()
+
+            if ly_raw.empty:
                 st.info(
-                    f"Seasonal comparison needs data for **{ly_month}** (same month last year). "
-                    "Expand the month range to include it."
+                    f"No data available for **{ly_month}** (same month last year). "
+                    "It may not have been fetched yet — run the GP fetch for that month."
                 )
             else:
                 st.markdown(f"**{last_month}** vs **{ly_month}** — same month, year-over-year")
 
-                def _month_agg(month):
+                def _month_agg(source_df, month):
                     return (
-                        df[df["Month"] == month]
+                        source_df[source_df["Month"] == month]
                         .groupby("Item No.")
                         .agg(Sales_KWD=("Sales Value (KWD)","sum"), GP_KWD=("GP (KWD)","sum"),
                              Qty=("Sales Qty","sum"))
                         .reset_index()
                     )
 
-                cy = _month_agg(last_month).set_index("Item No.")
-                ly = _month_agg(ly_month).set_index("Item No.")
+                cy = _month_agg(df,     last_month).set_index("Item No.")
+                ly = _month_agg(ly_raw, ly_month).set_index("Item No.")
 
                 seas = cy.join(ly, how="outer", lsuffix="_cy", rsuffix="_ly").fillna(0)
                 seas["YoY_Sales%"] = ((seas["Sales_KWD_cy"] - seas["Sales_KWD_ly"]) /
                                       seas["Sales_KWD_ly"].replace(0, pd.NA) * 100).round(1)
                 seas["YoY_GP%"]    = ((seas["GP_KWD_cy"] - seas["GP_KWD_ly"]) /
                                       seas["GP_KWD_ly"].replace(0, pd.NA) * 100).round(1)
-                seas = seas.join(_meta(df).set_index("Item No."), how="left")
+                combined_meta = pd.concat([df[meta_cols], ly_raw[meta_cols]], ignore_index=True)
+                seas = seas.join(_meta(combined_meta).set_index("Item No."), how="left")
                 seas = seas.sort_values("Sales_KWD_cy", ascending=False).reset_index()
 
                 col_a, col_b = st.columns(2)
