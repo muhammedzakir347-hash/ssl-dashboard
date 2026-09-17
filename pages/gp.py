@@ -203,6 +203,21 @@ with st.sidebar:
     item_q = st.text_input("Search item", placeholder="Name or item no.")
     min_sales = st.number_input("Min Sales Value (KWD)", min_value=0, value=0, step=500)
 
+    # Day-level date filter
+    st.markdown("---")
+    st.markdown("**Date range (day)**")
+    _min_date = raw["Posting Date"].min().date()
+    _max_date = raw["Posting Date"].max().date()
+    col_d1, col_d2 = st.columns(2)
+    with col_d1:
+        sel_date_from = st.date_input("From date", value=_min_date,
+                                      min_value=_min_date, max_value=_max_date,
+                                      key="date_from")
+    with col_d2:
+        sel_date_to   = st.date_input("To date", value=_max_date,
+                                      min_value=_min_date, max_value=_max_date,
+                                      key="date_to")
+
 df = raw.copy()
 if sel_cats:   df = df[df["Category"].isin(sel_cats)]
 if sel_brands: df = df[df["Brand"].isin(sel_brands)]
@@ -212,7 +227,17 @@ if item_q:
         df["Item No."].str.contains(item_q, case=False, na=False)
     ]
 
-period_label = f"{from_month} to {to_month}"
+# Apply day-level filter
+df = df[
+    (df["Posting Date"].dt.date >= sel_date_from) &
+    (df["Posting Date"].dt.date <= sel_date_to)
+]
+
+period_label = (
+    f"{sel_date_from} to {sel_date_to}"
+    if (sel_date_from != _min_date or sel_date_to != _max_date)
+    else f"{from_month} to {to_month}"
+)
 
 if df.empty:
     st.warning("No data for selected filters.")
