@@ -499,6 +499,14 @@ with tab_item:
     styled = _apply(styled, _style_gp,  ["GP%"])
     styled = _apply(styled, _style_risk, ["GP Risk"])
     st.dataframe(styled, width="stretch", height=460)
+    _dl_view = view[["Item No.", "Item Name", "Brand", "Category",
+                      "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
+                      "Neg_GP_Days", "GP Risk"]].rename(
+        columns={"Sales":"Sales (KWD)","COGS":"COGS (KWD)","GP":"GP (KWD)",
+                 "Sell_Days":"Selling Days","Avg/Day":"Avg/Day (KWD)","Neg_GP_Days":"Promo Days"})
+    st.download_button("⬇ Download Item Analysis",
+                       _dl_view.to_csv(index=False),
+                       file_name="gp_item_analysis.csv", mime="text/csv")
 
     # summary of coupon impact
     promo_items  = item_agg[item_agg["GP Risk"] == "Coupon/Promo"]
@@ -659,12 +667,17 @@ with tab_daily:
 
     if not gap_days.empty:
         st.markdown("#### Gap Days Detail")
+        _gap_dl = gap_days[["Posting Date","DOW","Sales Value (KWD)","GP%"]].rename(
+            columns={"Sales Value (KWD)":"Sales (KWD)"}).copy()
+        _gap_dl["Posting Date"] = _gap_dl["Posting Date"].dt.strftime("%Y-%m-%d")
         st.dataframe(
-            gap_days[["Posting Date","DOW","Sales Value (KWD)","GP%"]]
-            .rename(columns={"Sales Value (KWD)": "Sales (KWD)"})
-            .style.format({"Sales (KWD)": "{:,.0f}", "GP%": "{:.1f}%"}),
+            _gap_dl.style.format({"Sales (KWD)": "{:,.0f}", "GP%": "{:.1f}%"}),
             width='stretch', height=240,
         )
+        st.download_button("⬇ Download Daily Data",
+                           daily.assign(**{"Posting Date": daily["Posting Date"].dt.strftime("%Y-%m-%d")})
+                               .to_csv(index=False),
+                           file_name="gp_daily.csv", mime="text/csv")
 
 
 # --------------------------------------------------------------------------
@@ -730,14 +743,17 @@ with tab_gap:
             dorm_df["GP%"]       = (dorm_df["GP_KWD"] / dorm_df["Sales_KWD"] * 100).round(2)
             dorm_df["Last Sale"] = dorm_df["Last_Sale"].dt.strftime("%Y-%m-%d")
             st.markdown(f"**{len(dorm_df):,} items** stopped selling in the recent period.")
+            _dorm_dl = dorm_df[["Item No.","Item Name","Brand","Category",
+                                 "Last Sale","Qty","Sales_KWD","GP_KWD","GP%"]].rename(
+                columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)"})
             st.dataframe(
-                dorm_df[["Item No.","Item Name","Brand","Category",
-                          "Last Sale","Qty","Sales_KWD","GP_KWD","GP%"]]
-                .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)"})
-                .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.0f}",
+                _dorm_dl.style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.0f}",
                                "GP (KWD)":"{:,.0f}","GP%":"{:.1f}%"}),
                 width='stretch', height=400,
             )
+            st.download_button("⬇ Download Dormant Items",
+                               _dorm_dl.to_csv(index=False),
+                               file_name="gp_dormant_items.csv", mime="text/csv")
 
     with sub_promo:
         st.markdown("Items where **60%+ of qty came from spike days** (3x avg) - promo-dependent.")
@@ -765,14 +781,17 @@ with tab_gap:
         if promo.empty:
             st.success("No promo-dependent items found.")
         else:
+            _promo_dl = promo[["Item No.","Item Name","Brand","Category",
+                                "Sales Value (KWD)","total_qty","sell_days","Spike%"]].rename(
+                columns={"Sales Value (KWD)":"Sales (KWD)","total_qty":"Total Qty",
+                         "sell_days":"Selling Days","Spike%":"Spike Day %"})
             st.dataframe(
-                promo[["Item No.","Item Name","Brand","Category",
-                        "Sales Value (KWD)","total_qty","sell_days","Spike%"]]
-                .rename(columns={"Sales Value (KWD)":"Sales (KWD)","total_qty":"Total Qty",
-                                 "sell_days":"Selling Days","Spike%":"Spike Day %"})
-                .style.format({"Sales (KWD)":"{:,.0f}","Total Qty":"{:,.0f}","Spike Day %":"{:.1f}%"}),
+                _promo_dl.style.format({"Sales (KWD)":"{:,.0f}","Total Qty":"{:,.0f}","Spike Day %":"{:.1f}%"}),
                 width='stretch', height=400,
             )
+            st.download_button("⬇ Download Promo-Dependent Items",
+                               _promo_dl.to_csv(index=False),
+                               file_name="gp_promo_items.csv", mime="text/csv")
 
     with sub_neg:
         st.markdown("Items **sold below cost** - losing money on every unit.")
@@ -788,13 +807,16 @@ with tab_gap:
             st.success("No items with negative GP.")
         else:
             st.error(f"{len(neg):,} items are selling below cost!")
+            _neg_dl = neg[["Item No.","Item Name","Brand","Category","Qty","Sales_KWD","GP_KWD","GP%","Days"]].rename(
+                columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)","Days":"Selling Days"})
             st.dataframe(
-                neg[["Item No.","Item Name","Brand","Category","Qty","Sales_KWD","GP_KWD","GP%","Days"]]
-                .rename(columns={"Sales_KWD":"Sales (KWD)","GP_KWD":"GP (KWD)","Days":"Selling Days"})
-                .style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.3f}",
+                _neg_dl.style.format({"Qty":"{:,.0f}","Sales (KWD)":"{:,.3f}",
                                "GP (KWD)":"{:,.3f}","GP%":"{:.2f}%"}),
                 width='stretch', height=400,
             )
+            st.download_button("⬇ Download Below-Cost Items",
+                               _neg_dl.to_csv(index=False),
+                               file_name="gp_below_cost_items.csv", mime="text/csv")
 
 # ==========================================================================
 # TAB 5  TRENDING

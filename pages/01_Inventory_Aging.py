@@ -506,6 +506,12 @@ fmt = {c: "{:,.0f}" for c in vendor_summary.columns if c != "Vendor"}
 st.dataframe(
     vendor_summary.style.format(fmt).map(color_bucket_cell, subset=[c for c in vendor_summary.columns if c not in ("Vendor", "Total Value")]), width="stretch", height=380,
 )
+st.download_button(
+    "⬇ Download Vendor Summary",
+    vendor_summary.to_csv(index=False),
+    file_name="inventory_vendor_summary.csv",
+    mime="text/csv",
+)
 
 # ─────────────────────────────────────────────────────────
 # ITEM-LEVEL DRILL DOWN
@@ -527,6 +533,12 @@ display_cols = ["Item No.", "Vendor", "Brand", "Category",
 drill_display = drill_df[[c for c in display_cols if c in drill_df.columns]].sort_values(["Days"], ascending=False).copy()
 drill_display["Posting Date"] = drill_display["Posting Date"].dt.strftime("%Y-%m-%d")
 st.dataframe(drill_display, width="stretch", height=400)
+st.download_button(
+    "⬇ Download Item Detail",
+    drill_display.to_csv(index=False),
+    file_name=f"inventory_items{'_' + drill_vendor if drill_vendor != '(All)' else ''}.csv",
+    mime="text/csv",
+)
 
 # ─────────────────────────────────────────────────────────
 # FOOTER
