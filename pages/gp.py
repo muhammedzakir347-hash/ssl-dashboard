@@ -427,13 +427,28 @@ with tab_item:
     item_agg["Avg/Day"] = (item_agg["Sales"] / item_agg["Sell_Days"]).round(3)
 
     # --- coupon / promo detection (real data from OrderAdjustmentGroupSummary) ---
-    # Load coupon CSVs for the selected months and aggregate per item
+    # Load coupon data: local CSVs first (dev), then BigQuery (Streamlit Cloud)
     _coupon_months = sorted(df["Month"].unique())
     _coupon_dfs = []
     for _cm in _coupon_months:
         _cf = GP_DIR / f"{_cm}_coupons.csv"
         if _cf.exists():
             _coupon_dfs.append(pd.read_csv(_cf))
+    if not _coupon_dfs:
+        # Try BigQuery — load all months in range at once
+        try:
+            import bigquery_client as bq
+            _bq_coupon = bq.read_table_range(bq.TABLE_COUPON, _coupon_months[0], _coupon_months[-1])
+            if not _bq_coupon.empty:
+                # BQ returns snake_case columns — map back
+                _bq_coupon = _bq_coupon.rename(columns={
+                    "Item_No": "Item No.", "Coupon_Orders": "Coupon_Orders",
+                    "Coupon_Names": "Coupon_Names", "Coupon_KWD": "Coupon_KWD",
+                    "Month": "Month",
+                })
+                _coupon_dfs.append(_bq_coupon)
+        except Exception:
+            pass
     if _coupon_dfs:
         coupon_df = (
             pd.concat(_coupon_dfs, ignore_index=True)

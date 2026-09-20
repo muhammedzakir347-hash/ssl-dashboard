@@ -167,6 +167,16 @@ def main() -> None:
     if results:
         combined = pd.concat(results, ignore_index=True)
         print(f"\nDone: {len(combined):,} item-month rows, {len(results)} month(s)")
+
+        # Push to BigQuery (upsert by Month)
+        print("Pushing to BigQuery ...")
+        try:
+            import bigquery_client as bq
+            bq.upsert_by_month(combined, bq.TABLE_COUPON, month_col="Month")
+            print("BQ push done.")
+        except Exception as e:
+            print(f"BQ push failed (non-fatal): {e}")
+
         print("\nTop coupons used:")
         print(
             combined.assign(names=combined["Coupon_Names"].str.split(", "))

@@ -27,10 +27,11 @@ logger = logging.getLogger("ssl_dashboard.bigquery")
 
 PROJECT_ID  = "cogent-script-501911-j0"
 DATASET     = "ssl_dashboard"
-TABLE_SSL   = "ssl_merged"
-TABLE_INV   = "inventory_aging"
-TABLE_SALES = "sales_data"
-TABLE_GP    = "gp_data"
+TABLE_SSL    = "ssl_merged"
+TABLE_INV    = "inventory_aging"
+TABLE_SALES  = "sales_data"
+TABLE_GP     = "gp_data"
+TABLE_COUPON = "coupon_data"
 
 _SCOPES = ["https://www.googleapis.com/auth/cloud-platform"]
 
