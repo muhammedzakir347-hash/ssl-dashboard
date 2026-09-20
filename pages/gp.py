@@ -426,8 +426,36 @@ with tab_item:
     item_agg["GP%"]     = (item_agg["GP"] / item_agg["Sales"] * 100).where(item_agg["Sales"] > 0, 0).round(3)
     item_agg["Avg/Day"] = (item_agg["Sales"] / item_agg["Sell_Days"]).round(3)
 
-    # --- coupon / promo detection ----------------------------------------
-    # Days where this item's GP (KWD) was negative = likely a discount/coupon applied
+    # --- coupon / promo detection (real data from OrderAdjustmentGroupSummary) ---
+    # Load coupon CSVs for the selected months and aggregate per item
+    _coupon_months = sorted(df["Month"].unique())
+    _coupon_dfs = []
+    for _cm in _coupon_months:
+        _cf = GP_DIR / f"{_cm}_coupons.csv"
+        if _cf.exists():
+            _coupon_dfs.append(pd.read_csv(_cf))
+    if _coupon_dfs:
+        coupon_df = (
+            pd.concat(_coupon_dfs, ignore_index=True)
+            .groupby("Item No.", as_index=False)
+            .agg(
+                Coupon_Orders=("Coupon_Orders", "sum"),
+                Coupon_Names =("Coupon_Names",  lambda x: ", ".join(sorted(set(
+                    n.strip() for v in x for n in str(v).split(",")
+                )))),
+                Coupon_KWD   =("Coupon_KWD",    "sum"),
+            )
+        )
+        coupon_df["Coupon_KWD"] = coupon_df["Coupon_KWD"].round(3)
+    else:
+        coupon_df = pd.DataFrame(columns=["Item No.", "Coupon_Orders", "Coupon_Names", "Coupon_KWD"])
+
+    item_agg = item_agg.merge(coupon_df, on="Item No.", how="left")
+    item_agg["Coupon_Orders"] = item_agg["Coupon_Orders"].fillna(0).astype(int)
+    item_agg["Coupon_Names"]  = item_agg["Coupon_Names"].fillna("")
+    item_agg["Coupon_KWD"]    = item_agg["Coupon_KWD"].fillna(0.0)
+
+    # Fallback: negative-GP days as supplemental signal when coupon CSV not available
     neg_gp_days = (
         df[df["GP (KWD)"] < 0]
         .groupby("Item No.")["Posting Date"].nunique()
@@ -436,15 +464,15 @@ with tab_item:
     item_agg = item_agg.join(neg_gp_days, on="Item No.", how="left")
     item_agg["Neg_GP_Days"] = item_agg["Neg_GP_Days"].fillna(0).astype(int)
 
-    # GP Risk flag
     def _gp_risk(row):
         if row["GP%"] < 0:
             return "Pricing issue"
-        if row["Neg_GP_Days"] > 0:
+        if row["Coupon_Orders"] > 0 or row["Neg_GP_Days"] > 0:
             return "Coupon/Promo"
         return "Normal"
     item_agg["GP Risk"] = item_agg.apply(_gp_risk, axis=1)
-    # ---------------------------------------------------------------------
+    _has_real_coupons = not coupon_df.empty
+    # -------------------------------------------------------------------------
 
     if min_sales > 0:
         item_agg = item_agg[item_agg["Sales"] >= min_sales]
@@ -477,49 +505,63 @@ with tab_item:
         if val == "Coupon/Promo":  return "background-color:#FFF7ED;color:#C2410C"
         return ""
 
-    styled = (
-        view[["Rank", "Item No.", "Item Name", "Brand", "Category",
-              "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
-              "Neg_GP_Days", "GP Risk"]]
-        .rename(columns={"Sales": "Sales (KWD)", "COGS": "COGS (KWD)", "GP": "GP (KWD)",
-                         "Sell_Days": "Selling Days", "Avg/Day": "Avg/Day (KWD)",
-                         "Neg_GP_Days": "Promo Days"})
-        .style
-        .format({
-            "Qty": "{:,.0f}",
-            "Sales (KWD)": "{:,.3f}",
-            "COGS (KWD)": "{:,.3f}",
-            "GP (KWD)": "{:,.3f}",
-            "GP%": "{:.2f}%",
-            "Selling Days": "{:.0f}",
-            "Avg/Day (KWD)": "{:,.3f}",
-            "Promo Days": "{:.0f}",
-        })
-    )
+    # Build column list — include real coupon cols when available
+    _base_cols = ["Rank", "Item No.", "Item Name", "Brand", "Category",
+                  "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day", "GP Risk"]
+    _rename = {"Sales": "Sales (KWD)", "COGS": "COGS (KWD)", "GP": "GP (KWD)",
+               "Sell_Days": "Selling Days", "Avg/Day": "Avg/Day (KWD)"}
+    _fmt    = {"Qty": "{:,.0f}", "Sales (KWD)": "{:,.3f}", "COGS (KWD)": "{:,.3f}",
+               "GP (KWD)": "{:,.3f}", "GP%": "{:.2f}%", "Selling Days": "{:.0f}",
+               "Avg/Day (KWD)": "{:,.3f}"}
+    if _has_real_coupons:
+        _base_cols = ["Rank", "Item No.", "Item Name", "Brand", "Category",
+                      "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
+                      "Coupon_Orders", "Coupon_Names", "Coupon_KWD", "GP Risk"]
+        _rename.update({"Coupon_Orders": "Coupon Orders", "Coupon_Names": "Coupons Used",
+                        "Coupon_KWD": "Coupon Impact (KWD)"})
+        _fmt.update({"Coupon Orders": "{:,.0f}", "Coupon Impact (KWD)": "{:,.3f}"})
+    else:
+        _base_cols = ["Rank", "Item No.", "Item Name", "Brand", "Category",
+                      "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
+                      "Neg_GP_Days", "GP Risk"]
+        _rename["Neg_GP_Days"] = "Promo Days"
+        _fmt["Promo Days"] = "{:.0f}"
+
+    styled = view[_base_cols].rename(columns=_rename).style.format(_fmt)
     styled = _apply(styled, _style_gp,  ["GP%"])
     styled = _apply(styled, _style_risk, ["GP Risk"])
     st.dataframe(styled, width="stretch", height=460)
-    _dl_view = view[["Item No.", "Item Name", "Brand", "Category",
-                      "Qty", "Sales", "COGS", "GP", "GP%", "Sell_Days", "Avg/Day",
-                      "Neg_GP_Days", "GP Risk"]].rename(
-        columns={"Sales":"Sales (KWD)","COGS":"COGS (KWD)","GP":"GP (KWD)",
-                 "Sell_Days":"Selling Days","Avg/Day":"Avg/Day (KWD)","Neg_GP_Days":"Promo Days"})
+
+    _dl_cols = [c for c in _base_cols if c != "Rank"]
+    _dl_view = view[_dl_cols].rename(columns=_rename)
     st.download_button("⬇ Download Item Analysis",
                        _dl_view.to_csv(index=False),
                        file_name="gp_item_analysis.csv", mime="text/csv")
 
     # summary of coupon impact
-    promo_items  = item_agg[item_agg["GP Risk"] == "Coupon/Promo"]
+    promo_items   = item_agg[item_agg["GP Risk"] == "Coupon/Promo"]
     pricing_items = item_agg[item_agg["GP Risk"] == "Pricing issue"]
     if not promo_items.empty or not pricing_items.empty:
         ci1, ci2 = st.columns(2)
         with ci1:
             if not promo_items.empty:
-                lost = promo_items["Neg_GP_Days"].sum()
-                st.info(
-                    f"**{len(promo_items):,} items** have coupon/promo days "
-                    f"({lost:,} total promo-day occurrences) reducing their profit."
-                )
+                if _has_real_coupons:
+                    total_coupon_kwd = promo_items["Coupon_KWD"].sum()
+                    top_coupons = (
+                        promo_items["Coupon_Names"].str.split(", ").explode()
+                        .value_counts().head(3).index.tolist()
+                    )
+                    st.info(
+                        f"**{len(promo_items):,} items** bought with coupons "
+                        f"(est. **{total_coupon_kwd:,.1f} KWD** discount). "
+                        f"Top codes: {', '.join(top_coupons)}"
+                    )
+                else:
+                    lost = promo_items["Neg_GP_Days"].sum()
+                    st.info(
+                        f"**{len(promo_items):,} items** have coupon/promo days "
+                        f"({lost:,} total promo-day occurrences) reducing their profit."
+                    )
         with ci2:
             if not pricing_items.empty:
                 lost_gp = pricing_items["GP"].sum()

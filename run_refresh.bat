@@ -26,5 +26,24 @@ goto WAIT_DRIVE
 :RUN
 echo %DATE% %TIME% G: drive ready - starting main.py >> %LOCALLOG%
 cd /d "G:\Shared drives\Demand Planning\ssl_dashboard"
+
 "C:\Users\mzaki\AppData\Local\Programs\Python\Python313\python.exe" main.py >> logs\scheduler.log 2>&1
 echo %DATE% %TIME% main.py finished (exit %ERRORLEVEL%) >> %LOCALLOG%
+
+REM Get current month as YYYY-MM using Python (avoids locale date parsing issues)
+for /f %%i in ('"C:\Users\mzaki\AppData\Local\Programs\Python\Python313\python.exe" -c "import datetime; print(datetime.date.today().strftime(\"%%Y-%%m\"))"') do set CURR_MONTH=%%i
+
+REM Fetch current month GP data from Salesforce
+echo %DATE% %TIME% Starting GP fetch for %CURR_MONTH% >> %LOCALLOG%
+"C:\Users\mzaki\AppData\Local\Programs\Python\Python313\python.exe" fetch_gp_report.py --from %CURR_MONTH% --months 1 >> logs\scheduler.log 2>&1
+echo %DATE% %TIME% GP fetch finished (exit %ERRORLEVEL%) >> %LOCALLOG%
+
+REM Push updated GP month to BigQuery
+echo %DATE% %TIME% Pushing GP to BQ >> %LOCALLOG%
+"C:\Users\mzaki\AppData\Local\Programs\Python\Python313\python.exe" push_gp_month.py >> logs\scheduler.log 2>&1
+echo %DATE% %TIME% GP BQ push finished (exit %ERRORLEVEL%) >> %LOCALLOG%
+
+REM Fetch coupon/promo data for current month
+echo %DATE% %TIME% Fetching coupon data for %CURR_MONTH% >> %LOCALLOG%
+"C:\Users\mzaki\AppData\Local\Programs\Python\Python313\python.exe" fetch_coupon_data.py --from %CURR_MONTH% --months 1 >> logs\scheduler.log 2>&1
+echo %DATE% %TIME% Coupon fetch finished (exit %ERRORLEVEL%) >> %LOCALLOG%
