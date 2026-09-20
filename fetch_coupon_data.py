@@ -1,14 +1,15 @@
 """
 fetch_coupon_data.py
 --------------------
-Fetches coupon/promo data from Salesforce and links it to items via
-the OrderAdjustmentGroupSummary → OrderSummary → SalesInvoice chain.
+Fetches item-level coupon discount data from Salesforce via
+OrderItemAdjustmentLineSummary — exact amounts per item, no proportional guessing.
+
+Query: OrderItemAdjustmentLineSummary
+  - Filters: Type='Header', Name IS NOT NULL (real coupon codes only, no shipping)
+  - Joins: OrderItemSummary.ProductCode, OrderAdjustmentGroupSummary.Name
 
 Output: downloads/gp/YYYY-MM_coupons.csv
 Columns: Month | Item No. | Coupon_Orders | Coupon_Names | Coupon_KWD
-
-Coupon_KWD is the proportional allocation of the order-level discount
-to each item based on the item's share of the order total.
 
 Usage:
     python fetch_coupon_data.py                  # current month
@@ -64,83 +65,63 @@ def fetch_month(sf, year: int, month: int) -> pd.DataFrame:
     end_ts   = f"{end}T23:59:59Z"
     month_label = start.strftime("%Y-%m")
 
-    logger.info(f"Fetching coupon data for {month_label} ({start} → {end})")
+    logger.info(f"Fetching coupon data for {month_label} ({start} -> {end})")
 
-    # ── Step 1: order adjustments for the period ──────────────────────────
-    adj_records = _query_all(sf,
-        f"SELECT OrderSummaryId, Name, TotalAmount, Description, Type "
-        f"FROM OrderAdjustmentGroupSummary "
+    # Single query: exact item-level discount amounts from OrderItemAdjustmentLineSummary
+    # No proportional allocation — each record is the actual discount on that specific item
+    records = _query_all(sf,
+        f"SELECT OrderSummaryId, Amount, "
+        f"OrderItemSummary.ProductCode, "
+        f"OrderAdjustmentGroupSummary.Name "
+        f"FROM OrderItemAdjustmentLineSummary "
         f"WHERE CreatedDate >= {start_ts} AND CreatedDate <= {end_ts} "
-        f"AND Type = 'Header'"
+        f"AND OrderAdjustmentGroupSummary.Type = 'Header' "
+        f"AND OrderAdjustmentGroupSummary.Name != null"
     )
-    if not adj_records:
-        logger.info(f"  No coupon adjustments for {month_label}")
+
+    logger.info(f"  {len(records):,} item-level adjustment lines fetched")
+
+    if not records:
+        logger.info(f"  No coupon data for {month_label}")
         return pd.DataFrame()
 
-    adj_df = pd.DataFrame([{
-        "OrderSummaryId": r["OrderSummaryId"],
-        "Coupon":         r.get("Name") or r.get("Description") or "Unknown",
-        "CouponAmount":   float(r.get("TotalAmount") or 0),
-    } for r in adj_records])
+    rows = []
+    for r in records:
+        ois  = r.get("OrderItemSummary") or {}
+        oags = r.get("OrderAdjustmentGroupSummary") or {}
+        product_code = ois.get("ProductCode")
+        coupon_name  = oags.get("Name")
+        if not product_code or not coupon_name:
+            continue
+        rows.append({
+            "Item No.":       product_code,
+            "OrderSummaryId": r.get("OrderSummaryId"),
+            "Coupon":         coupon_name,
+            "Amount":         float(r.get("Amount") or 0),
+        })
 
-    coupon_order_ids = set(adj_df["OrderSummaryId"].unique())
-    logger.info(f"  {len(coupon_order_ids):,} orders with coupons, fetching invoice lines ...")
+    df = pd.DataFrame(rows)
+    logger.info(f"  {df['Item No.'].nunique():,} unique items, {df['OrderSummaryId'].nunique():,} orders with coupons")
 
-    # ── Step 2: invoice lines for the same period (3 fields only) ─────────
-    line_records = _query_all(sf,
-        f"SELECT GFERP__Item__r.Name, "
-        f"GFERP__Sales_Invoice__r.Order_Summary__c, "
-        f"GFERP__Line_Amount__c "
-        f"FROM GFERP__Sales_Invoice_Line__c "
-        f"WHERE GFERP__Posting_Date__c >= {start} "
-        f"AND GFERP__Posting_Date__c <= {end} "
-        f"AND GFERP__Quantity__c > 0"
-    )
-    logger.info(f"  {len(line_records):,} invoice lines fetched")
-
-    lines_df = pd.DataFrame([{
-        "Item No.":       (r.get("GFERP__Item__r") or {}).get("Name"),
-        "OrderSummaryId": (r.get("GFERP__Sales_Invoice__r") or {}).get("Order_Summary__c"),
-        "LineAmount":     float(r.get("GFERP__Line_Amount__c") or 0),
-    } for r in line_records])
-    lines_df = lines_df.dropna(subset=["Item No.", "OrderSummaryId"])
-
-    # Keep only lines that belong to coupon orders
-    lines_coupon = lines_df[lines_df["OrderSummaryId"].isin(coupon_order_ids)].copy()
-    logger.info(f"  {len(lines_coupon):,} lines in coupon orders ({lines_coupon['Item No.'].nunique():,} unique items)")
-
-    # ── Step 3: proportional coupon allocation ────────────────────────────
-    order_totals = (
-        lines_df.groupby("OrderSummaryId")["LineAmount"]
-        .sum()
-        .rename("OrderTotal")
-    )
-    merged = lines_coupon.join(order_totals, on="OrderSummaryId")
-    merged = merged.join(adj_df.set_index("OrderSummaryId")[["Coupon", "CouponAmount"]],
-                         on="OrderSummaryId")
-    merged["ItemCouponShare"] = merged["CouponAmount"] * (
-        merged["LineAmount"] / merged["OrderTotal"].replace(0, float("nan"))
-    )
-
-    # ── Step 4: aggregate per item ─────────────────────────────────────────
+    # Aggregate per item
     item_agg = (
-        merged.groupby("Item No.")
+        df.groupby("Item No.")
         .agg(
             Coupon_Orders=("OrderSummaryId", "nunique"),
             Coupon_Names =("Coupon",         lambda x: ", ".join(sorted(set(x)))),
-            Coupon_KWD   =("ItemCouponShare", "sum"),
+            Coupon_KWD   =("Amount",         "sum"),
         )
         .reset_index()
     )
     item_agg["Month"]      = month_label
     item_agg["Coupon_KWD"] = item_agg["Coupon_KWD"].round(3)
 
-    logger.info(f"  {len(item_agg):,} items with coupon exposure in {month_label}")
+    logger.info(f"  {len(item_agg):,} item rows in {month_label}")
     return item_agg
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Fetch coupon/promo data linked to items")
+    p = argparse.ArgumentParser(description="Fetch item-level coupon data from Salesforce")
     p.add_argument("--from",   dest="from_month", help="Start YYYY-MM (default: current month)")
     p.add_argument("--months", type=int, default=1, help="Number of months to fetch")
     args = p.parse_args()
@@ -168,7 +149,6 @@ def main() -> None:
         combined = pd.concat(results, ignore_index=True)
         print(f"\nDone: {len(combined):,} item-month rows, {len(results)} month(s)")
 
-        # Push to BigQuery (upsert by Month)
         print("Pushing to BigQuery ...")
         try:
             import bigquery_client as bq
