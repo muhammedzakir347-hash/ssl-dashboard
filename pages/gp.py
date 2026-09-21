@@ -412,8 +412,11 @@ with tab_ov:
 # TAB 2  ITEM ANALYSIS
 # --------------------------------------------------------------------------
 with tab_item:
+    _df_agg = df.copy()
+    for _c in ["Item No.", "Item Name", "Brand", "Category", "Vendor"]:
+        _df_agg[_c] = _df_agg[_c].fillna("Unknown")
     item_agg = (
-        df.groupby(["Item No.", "Item Name", "Brand", "Category", "Vendor"])
+        _df_agg.groupby(["Item No.", "Item Name", "Brand", "Category", "Vendor"])
         .agg(
             Qty       =("Sales Qty",         "sum"),
             Sales     =("Sales Value (KWD)", "sum"),
